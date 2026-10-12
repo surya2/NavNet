@@ -2,7 +2,7 @@
 #!/bin/bash
 
 BUILD_DIR="../build"
-DEBUG_DIR="../build/Debug"
+DEBUG_DIR="../build"
 
 # Check if no argument passed or first-time setup
 if [ $# -eq 0 ]; then
@@ -32,7 +32,7 @@ if [ $# -eq 0 ]; then
     
     echo "Building capture application..."
     cmake --build . --config Debug --target obstacle_detect_node -j$(nproc)
-    cmake --build . --config Debug --target realsense_capture -j$(nproc)
+    cmake --build . --config Debug --target captureTest -j$(nproc)
     cmake --build . --config Debug --target gradientMapTest -j$(nproc)
     cmake --build . --config Debug --target obstacleDetectionTest -j$(nproc)
     # cmake --build . --config Debug --target obstacleClusteringClosestObstacleTest
@@ -41,10 +41,10 @@ if [ $# -eq 0 ]; then
     # cmake --build . --config Debug --target pcTreeQuadrantTest
     # cmake --build . --config Debug --target pcTreeGradientTest
     
-    if [ -f "$DEBUG_DIR/realsense_capture" ]; then
+    if [ -f "$DEBUG_DIR/captureTest" ]; then
         echo "Running application..."
         cd "$DEBUG_DIR" || exit
-        ./realsense_capture 1
+        ./captureTest
     else
         echo "Error: Build failed: executable not found" >&2
         exit 1
@@ -53,9 +53,9 @@ elif [ "$1" = "clean" ]; then
     echo "Cleaning build directory"
     rm -rf "$BUILD_DIR"
 elif [ "$1" = "run" ]; then
-    if [ -f "$DEBUG_DIR/realsense_capture" ]; then
+    if [ -f "$DEBUG_DIR/captureTest" ]; then
         cd "$DEBUG_DIR" || exit
-        ./realsense_capture 1
+        ./captureTest
     else
         echo "Error: Executable not found. Please build first." >&2
         exit 1

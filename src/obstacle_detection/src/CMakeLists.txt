@@ -57,21 +57,21 @@ set(CMAKE_MODULE_PATH "${REALSENSE_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
 
 # Create executable
 add_executable(obstacle_detect_node obstacle_detect_process.cpp realsense_capture.cpp models/obstacle_clustering_tree.cpp gradient_map.cpp local_path_planner_graph.cpp ${CLIENT_CPP} ${FRAME_SENDER})
-add_executable(${PROJECT_NAME} startup.cpp realsense_capture.cpp models/obstacle_clustering_tree.cpp gradient_map.cpp local_path_planner_graph.cpp ${CLIENT_CPP} ${FRAME_SENDER})
+add_executable(captureTest ../test/capture_test.cpp extract_capture.cpp realsense_capture.cpp ${CLIENT_CPP} ${FRAME_SENDER})
 add_executable(gradientMapTest ../test/gradient_map_test.cpp extract_capture.cpp realsense_capture.cpp gradient_map.cpp models/obstacle_clustering_tree.cpp ${CLIENT_CPP} ${FRAME_SENDER})
 add_executable(obstacleDetectionTest ../test/obstacle_detection_test.cpp extract_capture.cpp realsense_capture.cpp gradient_map.cpp models/obstacle_clustering_tree.cpp ${CLIENT_CPP} ${FRAME_SENDER})
 # add_executable(pcTreeSimpleTests EXCLUDE_FROM_ALL models/pc_adacency_tree.cpp ../test/pc_tree_simple_tests.cpp)
 # add_executable(pcTreeQuadrantTest models/pc_adacency_tree.cpp ../test/pc_tree_quadrant_test.cpp realsense_capture.cpp)
 # add_executable(pcTreeGradientTest models/pc_adacency_tree.cpp models/pc_adacency_tree_gradientify.cpp ../test/pc_tree_gradient_test.cpp realsense_capture.cpp)
 
-foreach(target ${PROJECT_NAME} obstacle_detect_node gradientMapTest obstacleDetectionTest)
+foreach(target captureTest obstacle_detect_node gradientMapTest obstacleDetectionTest)
     target_include_directories(${target} PRIVATE
 	${REALSENSE_INCLUDE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
 endforeach()
 
-foreach(target ${PROJECT_NAME} obstacle_detect_node gradientMapTest obstacleDetectionTest)
+foreach(target captureTest obstacle_detect_node gradientMapTest obstacleDetectionTest)
     target_link_libraries(${target} PRIVATE
 	    ${REALSENSE_LIBRARY} ${OpenCV_LIBS}
     )
