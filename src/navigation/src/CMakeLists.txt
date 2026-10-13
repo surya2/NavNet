@@ -25,16 +25,17 @@ if(MSVC)
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif()
 
-set(REALSENSE_SOURCE_DIR "realsense-source/librealsense-2.56.3")
+set(REALSENSE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/realsense-source/librealsense-2.56.3")
 set(REALSENSE_INCLUDE_DIR "${REALSENSE_SOURCE_DIR}/include")
 
-set(REALSENSE_INCLUDE_DIR /usr/include)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_GRAPHICAL_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(BUILD_WITH_STATIC_CRT OFF CACHE BOOL "" FORCE)
+set(FORCE_RSUSB_BACKEND ON CACHE BOOL "" FORCE)
 
-find_library(REALSENSE_LIBRARY
-	NAMES realsense2
-	PATHS /usr/lib /usr/lib64 /usr/local/lib /usr/lib/x86_64-linux-gnu
-	REQUIRED
-)
+add_subdirectory(${REALSENSE_SOURCE_DIR} ${CMAKE_BINARY_DIR}/librealsense2)
 
 #find_package(realsense2 REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -73,3 +74,11 @@ target_link_libraries(gradientMapTest PRIVATE capture obstacle_detection)
 
 add_executable(obstacleDetectionTest ../test/obstacle_detection_test.cpp)
 target_link_libraries(obstacleDetectionTest PRIVATE capture obstacle_detection)
+
+foreach(target captureTest navigation gradientMapTest obstacleDetectionTest)
+    target_include_directories(${target} PRIVATE
+        ${REALSENSE_INCLUDE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+    target_link_libraries(${target} PRIVATE realsense2 ${OpenCV_LIBS})
+endforeach()
