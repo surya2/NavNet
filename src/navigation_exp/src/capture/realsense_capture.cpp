@@ -10,6 +10,8 @@ namespace fs = std::filesystem;
 
 static uint8_t *monoBuffer = nullptr;
 static size_t bufferSize = 0;
+
+static rs2::decimation_filter decimation;
 // ImageWriter imgWriter;
 
 // void sendPic(int width, int height) {
@@ -171,87 +173,115 @@ void processColorFrame(rs2::frame &color)
             monoBuffer[pixelIndex] = static_cast<uint8_t>(0.299 * r + 0.587 * g + 0.114 * b);
         }
     }
-    // std::cout << "finished copying color data" << std::endl;
-    // sendPic(width, height);
-    // imgWriter.processImage(width, height, monoBuffer);
     cv::Mat image(height, width, CV_8UC1, (void *)monoBuffer);
-    // std::cout << "Got image" << std::endl;
-    //std::vector<uchar> compressed_buf;
-    //std::vector<int> compression_params = {cv::IMWRITE_PNG_COMPRESSION, 3};
-    //cv::imencode(".jpeg", image, compressed_buf, compression_params);
-    //cv::Mat compressedImg = cv::imdecode(compressed_buf, cv::IMREAD_GRAYSCALE);
 }
 
-std::shared_ptr<Matrices> capture_depth_matrix(std::optional<std::vector<Vertex> *> &vertices, int decimationKernelSize, rs2::pipeline &pipe)
+void deproject_cpu(const uint16_t *depth,
+                          const DeprojParams &p,
+                          float *out_x,
+                          float *out_y,
+                          float *out_z,
+                          uint8_t *out_valid)
 {
-    // rs2::pipeline pipe;
-    // rs2::config cfg;
-    // usleep(1000000);
-    std::vector<std::vector<float>> heights;
-    std::vector<std::vector<Coordinate>> actualCoordinates;
+    for (int y = 0; y < DEPTH_HEIGHT; ++y){
+        const float y_norm = (static_cast<float>(y) - p.ppy) / p.fy;
+ 
+        for (int x = 0; x < DEPTH_WIDTH; ++x){
+            const int i = y * DEPTH_WIDTH + x;
+            const uint16_t raw = depth[i];
+ 
+            if (raw == 0){
+                out_x[i] = 0.0f;
+                out_y[i] = 0.0f;
+                out_z[i] = 0.0f;
+                out_valid[i] = 0;
+                continue;
+            }
+ 
+            const float d = static_cast<float>(raw) * p.depth_units;
+ 
+            const float px = ((static_cast<float>(x) - p.ppx) / p.fx) * d;
+            const float py = y_norm * d;
+            const float pz = d;
+ 
+            out_x[i] = px;
+            out_y[i] = py * p.cos_a - pz * p.sin_a;
+            out_z[i] = py * p.sin_a + pz * p.cos_a;
+            out_valid[i] = 1;
+        }
+    }
+}
 
+void capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pipeline &pipe)
+{
     try
     {
-        // pipe.start();
-
-        // for (int i = 0; i < 30; i++)
-        // {
-        //     pipe.wait_for_frames();
-        // }
-
-        rs2::decimation_filter decimation;
-        int decimation_magnitude = decimationKernelSize;
-        decimation.set_option(RS2_OPTION_FILTER_MAGNITUDE, decimation_magnitude);
+        static int lastMagnitude = -1;
+        if (decimationKernelSize != lastMagnitude)
+        {
+            decimation.set_option(RS2_OPTION_FILTER_MAGNITUDE, static_cast<float>(decimationKernelSize));
+            lastMagnitude = decimationKernelSize;
+        }
+ 
         rs2::frameset frames = pipe.wait_for_frames();
         rs2::depth_frame depth = decimation.process(frames.get_depth_frame());
         rs2::frame color = frames.get_color_frame();
         processColorFrame(color);
-
-        auto stream = depth.get_profile().as<rs2::video_stream_profile>();
-        auto intrinsics = stream.get_intrinsics();
-
-        int num_vertices = 0;
-        heights = std::vector<std::vector<float>>(depth.get_height(), std::vector<float>(depth.get_width(), 0.0));
-        actualCoordinates = std::vector<std::vector<Coordinate>>(depth.get_height(), std::vector<Coordinate>(depth.get_width(), Coordinate()));
-        std::vector<Vertex> *verticesRef = vertices.value_or(nullptr);
-
-        for (int y = 0; y < depth.get_height(); y++)
+ 
+        // The kernel (and the macros) assume a fixed size and a tightly packed buffer.
+        if (depth.get_width() != DEPTH_WIDTH || depth.get_height() != DEPTH_HEIGHT)
         {
-            for (int x = 0; x < depth.get_width(); x++)
+            throw std::runtime_error("Depth frame is " + std::to_string(depth.get_width()) + "x" +
+                                     std::to_string(depth.get_height()) +
+                                     " but DEPTH_WIDTH/DEPTH_HEIGHT are " + std::to_string(DEPTH_WIDTH) +
+                                     "x" + std::to_string(DEPTH_HEIGHT));
+        }
+        if (depth.get_stride_in_bytes() != DEPTH_WIDTH * static_cast<int>(sizeof(uint16_t)))
+        {
+            throw std::runtime_error("Depth frame rows are not tightly packed");
+        }
+ 
+        const rs2_intrinsics intrinsics = depth.get_profile().as<rs2::video_stream_profile>().get_intrinsics();
+ 
+        // deproject_cpu assumes no lens distortion. Warn once if the camera reports any.
+        static bool distortionChecked = false;
+        if (!distortionChecked)
+        {
+            for (float c : intrinsics.coeffs)
             {
-                float pixel_depth = depth.get_distance(x, y);
-
-                if (pixel_depth > 0)
+                if (std::fabs(c) > 1e-9f)
                 {
-                    float pixel[2] = {static_cast<float>(x), static_cast<float>(y)};
-                    float point[3];
-                    rs2_deproject_pixel_to_point(point, &intrinsics, pixel, pixel_depth);
-                    // float z = point[2] * sin(REALSENSE_CAM_ANGLE * M_PI / 180.0);
-                    float angle = ((-180.0f + REALSENSE_ANGLE_FROM_HORIZONTAL) * M_PI) / 180.0f;
-                    float y_rotated = point[1] * cos(angle) - point[2] * sin(angle);
-                    float z_rotated = point[1] * sin(angle) + point[2] * cos(angle);
-
-                    Vertex vertex(point[0], y_rotated, z_rotated);
-                    Vertex vertexCommonCoor(x, y, z_rotated);
-
-                    num_vertices++;
-                    heights[y][x] = z_rotated;
-                    actualCoordinates[y][x] = Coordinate(point[0], y_rotated);
-
-                    if (verticesRef)
-                    {
-                        verticesRef->push_back(vertex);
-                    }
-                }
-                else
-                {
-                    heights[y][x] = 0.0;
-                    actualCoordinates[y][x] = Coordinate();
+                    std::cerr << "Warning: depth intrinsics have non-zero distortion coefficients; "
+                                 "deproject_cpu ignores distortion.\n";
+                    break;
                 }
             }
+            distortionChecked = true;
         }
 
-        // pipe.stop();
+        params.fx = intrinsics.fx;
+        params.fy = intrinsics.fy;
+        params.ppx = intrinsics.ppx;
+        params.ppy = intrinsics.ppy;
+        params.depth_units = depth.get_units();
+ 
+        const uint16_t *raw_depth = reinterpret_cast<const uint16_t *>(depth.get_data());
+ 
+#ifdef DEPTH_TIMING
+        const auto t0 = std::chrono::steady_clock::now();
+#endif
+        deproject_cpu(raw_depth, params,
+                      matrices.coordX,
+                      matrices.coordY,
+                      matrices.heights,
+                      matrices.valid);
+#ifdef DEPTH_TIMING
+        const auto t1 = std::chrono::steady_clock::now();
+        std::cout << "deproject_cpu: "
+                  << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms\n";
+#endif
+ 
+        return matrices;
     }
     catch (const rs2::error &e)
     {
@@ -264,9 +294,4 @@ std::shared_ptr<Matrices> capture_depth_matrix(std::optional<std::vector<Vertex>
         std::cerr << "Error: " << e.what() << std::endl;
         return nullptr;
     }
-
-    std::shared_ptr<Matrices> matrices = std::make_shared<Matrices>();
-    matrices->heights = heights;
-    matrices->actualCoordinates = actualCoordinates;
-    return matrices;
 }

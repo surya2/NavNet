@@ -1,393 +1,278 @@
-#include <fstream>
-#include <iostream>
-#include <vector>
-#include <cmath>
-#include <thread>
-#include <mutex>
-#include "common/types.h"
 #include "obstacle_detection/gradient_map.h"
-#include <atomic>
-#include <numeric>
-#include <omp.h>
+
+#include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <functional>
+#include <iostream>
+#include <thread>
 
-std::mutex sumMutex;
-std::mutex copyMutex;
+static constexpr float HEIGHT_OUTLIER_SIGMAS = 2.5f;
+static constexpr float GRADIENT_OUTLIER_SIGMAS = 20.0f;
 
-float magnitude(float x, float y)
-{
+float magnitude(float x, float y){
   return std::sqrt((x * x) + (y * y));
 }
 
-/* Depending on Autonomous travel decision, can use parallel processes or Jetson CUDA cores to create gradient map */
-// heights is basically the depths in the depth matix but because he pointcloud has bn rotated about the X-axis, the depths are now the heights
-std::vector<std::vector<float>> ParallelGradientCalculator::calculateGradientsParallel(
-    const std::vector<std::vector<float>> &heights,
-    const std::vector<std::vector<Coordinate>> &actualCoordinates,
-    int numThreads, std::vector<Vertex> &obstacleVertices,
+float ParallelGradientCalculator::calculatePartialX(
+    const float *heights,
+    const float *coordX,
+    const uint8_t *valid,
+    int row, int col)
+{
+  const int base = row * DEPTH_WIDTH;
+  if (!valid[base+col])
+  {
+    return 0.0f; // again default value
+  }
+
+  int inc = col+1;
+  while (inc < DEPTH_WIDTH && !valid[base + inc])
+  {
+    inc++;
+  }
+  int dec = col-1;
+  while (dec >= 0 && !valid[base + dec])
+  {
+    dec--;
+  }
+
+  const bool hasIncNeigh = inc < DEPTH_WIDTH;
+  const bool hasDecNeigh = dec >= 0;
+  int a, b;
+  if (hasIncNeigh && hasDecNeigh)
+  {
+    a = base+inc;
+    b = base+dec;
+  }
+  else if (hasIncNeigh)
+  {
+    a = base+inc;
+    b = base+col;
+  }
+  else if (hasDecNeigh)
+  {
+    a = base+dec;
+    b = base+col;
+  }
+  else
+  {
+    return 0.0f;
+  }
+
+  const float dx = coordX[a]- coordX[b];
+  if (dx == 0.0f)
+  {
+    return 0.0f;
+  }
+  return (heights[a] - heights[b]) / dx; // partial dz/dx derivative
+}
+
+float ParallelGradientCalculator::calculatePartialY(
+    const float *heights,
+    const float *coordY,
+    const uint8_t *valid,
+    int row, int col)
+{
+  if (!valid[row * DEPTH_WIDTH + col])
+  {
+    return 0.0f;
+  }
+
+  int inc = row+1;
+  while (inc < DEPTH_HEIGHT && !valid[inc * DEPTH_WIDTH + col])
+  {
+    inc++;
+  }
+  int dec = row-1;
+  while (dec >= 0 && !valid[dec * DEPTH_WIDTH + col])
+  {
+    dec--;
+  }
+
+  const bool hasIncNeigh = inc < DEPTH_HEIGHT;
+  const bool hasDecNeigh = dec >= 0;
+  int a, b;
+  if (hasIncNeigh && hasDecNeigh)
+  {
+    a = inc*DEPTH_WIDTH+col;
+    b = dec*DEPTH_WIDTH+col;
+  }
+  else if (hasInc)
+  {
+    a = inc * DEPTH_WIDTH + col;
+    b = row * DEPTH_WIDTH + col;
+  }
+  else if (hasDec)
+  {
+    a = dec * DEPTH_WIDTH + col;
+    b = row * DEPTH_WIDTH + col;
+  }
+  else
+  {
+    return 0.0f;
+  }
+
+  const float dy = coordY[a] - coordY[b];
+  if (dy == 0.0f)
+  {
+    return 0.0f;
+  }
+  return (heights[a] - heights[b]) / dy;
+}
+
+void ParallelGradientCalculator::computeGradientRows(
+    const float *heights,
+    const float *coordX,
+    const float *coordY,
+    const uint8_t *valid,
+    float *gradients,
+    int rowBegin,
+    int rowEnd,
+    GradientPartialSums &sums)
+{
+  for (int row = rowBegin; row < rowEnd; ++row)
+  {
+    for (int col = 0; col < DEPTH_WIDTH; ++col)
+    {
+      const int i = row * DEPTH_WIDTH + col;
+
+      if (!valid[i])
+      {
+        gradients[i] = 0.0f; // default val for invalid pixelsf
+        continue;
+      }
+
+      const float dzdx = calculatePartialX(heights, coordX, valid, row, col);
+      const float dzdy = calculatePartialY(heights, coordY, valid, row, col);
+      const float g = magnitude(dzdx, dzdy);
+      gradients[i] = g;
+
+      const double h = heights[i];
+      sums.count += 1;
+      sums.sum_heights += h;
+      sums.sum_heights_squared += h * h;
+      sums.sum_gradients += g;
+      sums.sum_gradients_squared += static_cast<double>(g) * g;
+    }
+  }
+}
+
+const float *ParallelGradientCalculator::calculateGradientsParallel(
+    const Matrices &m,
+    int numThreads,
+    std::vector<Vertex> &obstacleVertices,
     ObstacleClusteringTree &obstacleTree)
 {
-  Stats globalStats;
-  std::vector<Stats> localStats(numThreads);
-  int fullRows = (int)heights.size();
-  int fullCols = (int)heights[0].size();
+  static float gradients[DEPTH_PIXELS];
 
-  std::vector<std::vector<float>> result(fullRows, std::vector<float>(fullCols));
+  numThreads = std::clamp(numThreads, 1, GRADIENT_MAX_THREADS);
+  const int rowsPerThread = (DEPTH_HEIGHT + numThreads - 1) / numThreads;
 
-  int tileRows = (fullRows + numThreads - 1) / numThreads;
-  std::vector<std::thread> threads;
-  std::mutex resultMutex;
+#ifdef GRADIENT_TIMING
+  const auto t0 = std::chrono::steady_clock::now();
+#endif
 
-  // std::atomic<float> globalSum(0.0f);
-  // std::atomic<float> globalSquareSum(0.0f);
-  // std::atomic<float> globalGradSum(0.0f);
-  // std::atomic<float> globalSquareGradSum(0.0f);
-  // std::atomic<int> totalValidPoints(0);
-  std::vector<float> localMeans(numThreads, 0.0f);
-  std::vector<float> localSquareSums(numThreads, 0.0f);
-  std::vector<float> localStdevs(numThreads, 0.0f);
-  std::vector<float> localGradMeans(numThreads, 0.0f);
-  std::vector<float> localGradSquareSums(numThreads, 0.0f);
-  std::vector<int> localValidPoints(numThreads, 0);
-  auto start = std::chrono::high_resolution_clock::now();
-  for (int tileStart = 0; tileStart < fullRows; tileStart += tileRows)
+  // Stage 1 Parallel: gradients + partial sums, each thread owns a block of rows
+  GradientPartialSums partial[GRADIENT_MAX_THREADS];
+  std::thread threads[GRADIENT_MAX_THREADS];
+  int started = 0;
+
+  for (int t = 0; t < numThreads; ++t)
   {
-    threads.emplace_back([&, tileStart, n = tileStart / tileRows]()
-                         {
-                           int actualTileRows = std::min(tileRows, fullRows - tileStart);
-
-                           Tile tile = createTileWithOverlap(
-                               heights, actualCoordinates, tileStart, 0,
-                               actualTileRows, fullCols);
-
-                           auto tileGradients = calculateTileGradients(tile);
-
-                           localMeans[n] = tile.tileMean;
-                           localStdevs[n] = tile.tileStdDev;
-                           localSquareSums[n] = tile.tileSquareSum;
-                           localGradSquareSums[n] = tile.gradientSquareSum;
-                           localValidPoints[n] = tile.numValidPoints;
-                           localGradMeans[n] = tile.gradientSum / tile.numValidPoints;
-                           copyTileResults(result, tileGradients, tile); });
+    const int rowBegin = t * rowsPerThread;
+    const int rowEnd = std::min(DEPTH_HEIGHT, rowBegin + rowsPerThread);
+    if (rowBegin >= rowEnd)
+    {
+      break;
+    }
+    threads[t] = std::thread(computeGradientRows,
+                             m.heights, m.coordX, m.coordY, m.valid,
+                             gradients, rowBegin, rowEnd, std::ref(partial[t]));
+    started++;
+  }
+  for (int t = 0; t < started; t++)
+  {
+    threads[t].join();
   }
 
-  for (auto &thread : threads)
+#ifdef GRADIENT_TIMING
+  const auto t1 = std::chrono::steady_clock::now();
+  std::cout << "Time taken to calculate gradients: "
+            << std::chrono::duration<double>(t1 - t0).count() << "s" << std::endl;
+#endif
+
+  // Stage 2 combine partial sums and compute global mean/stddev to find outliers
+  GradientPartialSums total;
+  for (int t = 0; t < started; ++t)
   {
-    thread.join();
+    total.count += partial[t].count;
+    total.sum_heights += partial[t].sum_heights;
+    total.sum_heights_squared += partial[t].sum_heights_squared;
+    total.sum_gradients += partial[t].sum_gradients;
+    total.sum_gradients_squared += partial[t].sum_gradients_squared;
   }
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> elapsed = end - start;
-  std::cout << "Time taken to calculate gradients: " << elapsed.count() << "s" << std::endl;
+  if (total.count == 0)
+  {
+    return gradients;
+  }
 
-  // -------- trying to find a way to optimize/take this piece out
-  // Get mean and standard deviation for global
-  globalStats.mean = std::accumulate(localMeans.begin(), localMeans.end(), 0.0f) / numThreads;
-  globalStats.gradMean = std::accumulate(localGradMeans.begin(), localGradMeans.end(), 0.0f) / numThreads;
-  int totalValidPoints = std::accumulate(localValidPoints.begin(), localValidPoints.end(), 0);
-  globalStats.stdDev = static_cast<float>(std::sqrt((std::accumulate(localSquareSums.begin(), localSquareSums.end(), 0.0f) / totalValidPoints) - std::pow(globalStats.mean, 2)));
-  globalStats.gradStdDev = static_cast<float>(std::sqrt((std::accumulate(localGradSquareSums.begin(), localGradSquareSums.end(), 0.0f) / totalValidPoints) - std::pow(globalStats.gradMean, 2)));
+  Stats globalStats{};
+  const double n = static_cast<double>(total.count);
+  const double mean_height = total.sum_heights / n;
+  const double mean_gradient = total.sum_gradients / n;
+  globalStats.validPoints = static_cast<int>(total.count);
+  globalStats.mean = static_cast<float>(mean_height);
+  globalStats.gradMean = static_cast<float>(mean_gradient);
+  globalStats.stdDev = static_cast<float>(std::sqrt(std::max(0.0, total.sum_heights_squared / n - mean_height * mean_height)));
+  globalStats.gradStdDev = static_cast<float>(std::sqrt(std::max(0.0, total.sum_gradients_squared / n - mean_gradient * mean_gradient)));
 
-  // 2nd pass to identify outliers - need to refactor this to be more optimal
+#ifdef GRADIENT_TIMING
   std::cout << "Global mean: " << globalStats.mean << std::endl;
   std::cout << "Global std dev: " << globalStats.stdDev << std::endl;
   std::cout << "Global gradient mean: " << globalStats.gradMean << std::endl;
   std::cout << "Global gradient std dev: " << globalStats.gradStdDev << std::endl;
+#endif
 
-  std::pair<int, int> leftIndices(fullCols / 2, fullRows / 2);
-  std::pair<int, int> rightIndices(leftIndices.first + 1, fullRows / 2);
-// float localMean = 0.0f, localStdDev = 0.0f, isLocalOutlier = false, hasHighLocalVariance = false, isGlobalOutlier = false, isGradientOutlier = false;
-#pragma omp parallel for collapse(2)
-  while (leftIndices.second > 0 || rightIndices.second < fullRows)
+  // Lastly go through each point and check if outlier and if so add to obstacleVertices (just to keep in flat array) and obstacleTree
+  auto scanRow = [&](int row)
   {
-    while (leftIndices.first > 0 || rightIndices.first < fullCols)
+    const int base = row * DEPTH_WIDTH;
+    for (int col = 0; col < DEPTH_WIDTH; col++)
     {
-      if (leftIndices.second > 0 && leftIndices.first > 0 && actualCoordinates[leftIndices.second][leftIndices.first].valid)
+      const int i = base+col;
+      if (!m.valid[i])
       {
-        float localMean = localStats[leftIndices.second / tileRows].mean;
-        float localStdDev = localStats[leftIndices.second / tileRows].stdDev;
-        bool isLocalOutlier = std::abs(heights[leftIndices.second][leftIndices.first] - localMean) > 2.5 * localStdDev;
-        bool hasHighLocalVariance = localStdDev > globalStats.stdDev;
-        bool isGlobalOutlier = std::abs(heights[leftIndices.second][leftIndices.first] - globalStats.mean) > 2.5 * globalStats.stdDev;
-        bool isGradientOutlier = std::abs(result[leftIndices.second][leftIndices.first] - globalStats.gradMean) > 20 * globalStats.gradStdDev;
-        if (isGlobalOutlier || isGradientOutlier)
-        {
-          Vertex partOfObstacle(actualCoordinates[leftIndices.second][leftIndices.first].x, actualCoordinates[leftIndices.second][leftIndices.first].y, heights[leftIndices.second][leftIndices.first]);
-          obstacleVertices.push_back(partOfObstacle);
-          obstacleTree.add(partOfObstacle);
-        }
+        continue;
       }
 
-      if (rightIndices.second < fullRows && rightIndices.first < fullCols && actualCoordinates[rightIndices.second][rightIndices.first].valid)
+      const bool isGlobalOutlier = std::fabs(m.heights[i]-globalStats.mean) > HEIGHT_OUTLIER_SIGMAS*globalStats.stdDev;
+      const bool isGradientOutlier = std::fabs(gradients[i]-globalStats.gradMean) > GRADIENT_OUTLIER_SIGMAS*globalStats.gradStdDev;
+
+      if (isGlobalOutlier || isGradientOutlier)
       {
-        float localMean = localStats[rightIndices.second / tileRows].mean;
-        float localStdDev = localStats[rightIndices.second / tileRows].stdDev;
-        bool isLocalOutlier = std::abs(heights[rightIndices.second][rightIndices.first] - localMean) > 2.5 * localStdDev;
-        bool hasHighLocalVariance = localStdDev > globalStats.stdDev;
-        bool isGlobalOutlier = std::abs(heights[rightIndices.second][rightIndices.first] - globalStats.mean) > 2.5 * globalStats.stdDev;
-        bool isGradientOutlier = std::abs(result[rightIndices.second][rightIndices.first] - globalStats.gradMean) > 20 * globalStats.gradStdDev;
-        if (isGlobalOutlier || isGradientOutlier)
-        {
-          Vertex partOfObstacle(actualCoordinates[rightIndices.second][rightIndices.first].x, actualCoordinates[rightIndices.second][rightIndices.first].y, heights[rightIndices.second][rightIndices.first]);
-          obstacleVertices.push_back(partOfObstacle);
-          obstacleTree.add(partOfObstacle);
-        }
+        const Vertex partOfObstacle(m.coordX[i], m.coordY[i], m.heights[i]);
+        obstacleVertices.push_back(partOfObstacle);
+        obstacleTree.add(partOfObstacle);
       }
-
-      leftIndices.first--;
-      rightIndices.first++;
     }
-    leftIndices.second--;
-    rightIndices.second++;
-    leftIndices.first = fullCols - 1;
-    rightIndices.first = 0;
-  }
+  };
 
-  // #pragma omp parallel for collapse(2)
-  //   for (int i = 0; i < fullRows; ++i)
-  //   {
-  //     for (int j = 0; j < fullCols; ++j)
-  //     {
-  //       if (actualCoordinates[i][j].valid)
-  //       {
-  //         float localMean = localStats[i / tileRows].mean;
-  //         float localStdDev = localStats[i / tileRows].stdDev;
-  //         bool isLocalOutlier = std::abs(heights[i][j] - localMean) > 2.5 * localStdDev;
-  //         bool hasHighLocalVariance = localStdDev > globalStats.stdDev;
-  //         bool isGlobalOutlier = std::abs(heights[i][j] - globalStats.mean) > 2.5 * globalStats.stdDev;
-  //         bool isGradientOutlier = std::abs(result[i][j] - globalStats.gradMean) > 20 * globalStats.gradStdDev;
-  //         if (isGlobalOutlier || isGradientOutlier)
-  //         {
-  //           Vertex partOfObstacle(actualCoordinates[i][j].x, actualCoordinates[i][j].y, heights[i][j]);
-  //           obstacleVertices.push_back(partOfObstacle);
-  //           obstacleTree.add(partOfObstacle);
-  //         }
-  //       }
-  //     }
-  //   }
-
-  return result;
-}
-
-Tile ParallelGradientCalculator::createTileWithOverlap(
-    const std::vector<std::vector<float>> &heights,
-    const std::vector<std::vector<Coordinate>> &actualCoordinates,
-    int startRow, int startCol,
-    int rows, int cols)
-{
-  int overlapStartRow = std::max(0, startRow - OVERLAP);
-  int overlapStartCol = std::max(0, startCol - OVERLAP);
-  int overlapEndRow = std::min((int)heights.size(), startRow + rows + OVERLAP);
-  int overlapEndCol = std::min((int)heights[0].size(), startCol + cols + OVERLAP);
-
-  Tile tile(startRow, startCol,
-            overlapEndRow - overlapStartRow,
-            overlapEndCol - overlapStartCol);
-
-  for (int i = overlapStartRow; i < overlapEndRow; ++i)
+  const int centerRow = DEPTH_HEIGHT/2;
+  const int maxOffset = std::max(centerRow, (DEPTH_HEIGHT-1)-centerRow);
+  for (int offset = 0; offset <= maxOffset; offset++)
   {
-    for (int j = overlapStartCol; j < overlapEndCol; ++j)
+    const int rowUp = centerRow - offset;
+    const int rowDown = centerRow + offset;
+    if (rowUp >= 0)
     {
-      tile.data[i - overlapStartRow][j - overlapStartCol] = heights[i][j];
-      tile.actualCoors[i - overlapStartRow][j - overlapStartCol] = std::make_shared<Coordinate>(actualCoordinates[i][j]);
-      if (actualCoordinates[i][j].valid)
-      {
-        tile.numValidPoints++;
-      }
-      tile.tileSquareSum += std::pow(heights[i][j], 2);
-      tile.tileSum += heights[i][j];
+      scanRow(rowUp);
+    }
+    if (offset > 0 && rowDown < DEPTH_HEIGHT)
+    {
+      scanRow(rowDown);
     }
   }
-  tile.tileMean = tile.tileSum / tile.numValidPoints;
-  tile.tileStdDev = std::sqrt((tile.tileSquareSum / tile.numValidPoints) - std::pow(tile.tileMean, 2));
-  return tile;
-}
-
-std::vector<std::vector<float>> ParallelGradientCalculator::calculateTileGradients(
-    Tile &tile)
-{
-  std::vector<std::vector<float>> gradients(
-      tile.rows, std::vector<float>(tile.cols));
-
-  for (int i = 0; i < tile.rows; ++i)
-  {
-    for (int j = 0; j < tile.cols; ++j)
-    {
-      double dzdx = calculatePartialX(tile.data, tile.actualCoors, i, j, tile.cols);
-      double dzdy = calculatePartialY(tile.data, tile.actualCoors, i, j, tile.rows);
-      gradients[i][j] = magnitude(dzdx, dzdy);
-      tile.gradientSum += gradients[i][j];
-      tile.gradientSquareSum += std::pow(gradients[i][j], 2);
-    }
-  }
-  // tile.gradientMean = tile.gradientSum / tile.numValidPoints;
 
   return gradients;
-}
-
-void ParallelGradientCalculator::copyTileResults(
-    std::vector<std::vector<float>> &result,
-    const std::vector<std::vector<float>> &tileGradients,
-    const Tile &tile)
-{
-  for (int i = OVERLAP; i < tile.rows - OVERLAP; ++i)
-  {
-    for (int j = OVERLAP; j < tile.cols - OVERLAP; ++j)
-    {
-      int globalRow = tile.sRow + (i - OVERLAP);
-      int globalCol = tile.sCol + (j - OVERLAP);
-      if (globalRow < result.size() && globalCol < result[0].size())
-      {
-        result[globalRow][globalCol] = tileGradients[i][j];
-      }
-    }
-  }
-}
-
-float ParallelGradientCalculator::calculatePartialX(
-    const std::vector<std::vector<float>> &heights,
-    const std::vector<std::vector<std::shared_ptr<Coordinate>>> &actualCoordinates,
-    int i, int j, int cols)
-{
-  if (actualCoordinates[i][j]->valid == false)
-  {
-    return 0.0f;
-  }
-  if (j == 0)
-  {
-    int nextValidJ = j + 1;
-    while (nextValidJ < cols && !actualCoordinates[i][nextValidJ]->valid)
-    {
-      nextValidJ++;
-    }
-    if (nextValidJ < cols)
-    {
-      return (heights[i][nextValidJ] - heights[i][j]) / (actualCoordinates[i][nextValidJ]->x - actualCoordinates[i][j]->x);
-    }
-    else
-    {
-      return 0.0f;
-    }
-  }
-  else if (j == cols - 1)
-  {
-    // return (heights[i][j] - heights[i][j - 1]) / (actualCoordinates[i][j]->x - actualCoordinates[i][j - 1]->x);
-    int nextValidJ = j - 1;
-    while (nextValidJ > 0 && !actualCoordinates[i][nextValidJ]->valid)
-    {
-      nextValidJ--;
-    }
-    if (nextValidJ < cols)
-    {
-      return (heights[i][nextValidJ] - heights[i][j]) / (actualCoordinates[i][nextValidJ]->x - actualCoordinates[i][j]->x);
-    }
-    else
-    {
-      return 0.0f; // No valid next point found
-    }
-  }
-  else
-  {
-    int nextValidJPlus = j + 1;
-    while (nextValidJPlus < cols && !actualCoordinates[i][nextValidJPlus]->valid)
-    {
-      nextValidJPlus++;
-    }
-
-    int nextValidJMinus = j - 1;
-    while (nextValidJMinus >= 0 && !actualCoordinates[i][nextValidJMinus]->valid)
-    {
-      nextValidJMinus--;
-    }
-
-    if (nextValidJPlus < cols && nextValidJMinus >= 0)
-    {
-      return (heights[i][nextValidJPlus] - heights[i][nextValidJMinus]) / (actualCoordinates[i][nextValidJPlus]->x - actualCoordinates[i][nextValidJMinus]->x);
-    }
-    else if (nextValidJPlus < cols)
-    {
-      return (heights[i][nextValidJPlus] - heights[i][j]) / (actualCoordinates[i][nextValidJPlus]->x - actualCoordinates[i][j]->x);
-    }
-    else if (nextValidJMinus >= 0)
-    {
-      return (heights[i][nextValidJMinus] - heights[i][j]) / (actualCoordinates[i][nextValidJMinus]->x - actualCoordinates[i][j]->x);
-    }
-    else
-    {
-      return 0.0f;
-    }
-  }
-}
-
-float ParallelGradientCalculator::calculatePartialY(
-    const std::vector<std::vector<float>> &heights,
-    const std::vector<std::vector<std::shared_ptr<Coordinate>>> &actualCoordinates,
-    int i, int j, int rows)
-{
-  if (actualCoordinates[i][j]->valid == false)
-  {
-    return 0.0f;
-  }
-  if (i == 0)
-  {
-    int nextValidI = i + 1;
-    while (nextValidI < rows && !actualCoordinates[nextValidI][j]->valid)
-    {
-      nextValidI++;
-    }
-    if (nextValidI < rows)
-    {
-      return (heights[nextValidI][j] - heights[i][j]) / (actualCoordinates[nextValidI][j]->y - actualCoordinates[i][j]->y);
-    }
-    else
-    {
-      return 0.0f;
-    }
-  }
-  else if (i == rows - 1)
-  {
-    int nextValidI = i - 1;
-    while (nextValidI > 0 && !actualCoordinates[nextValidI][j]->valid)
-    {
-      nextValidI--;
-    }
-    if (nextValidI < rows)
-    {
-      return (heights[nextValidI][j] - heights[i][j]) / (actualCoordinates[nextValidI][j]->y - actualCoordinates[i][j]->y);
-    }
-    else
-    {
-      return 0.0f;
-    }
-  }
-  else
-  {
-    int nextValidIPlus = i + 1;
-    while (nextValidIPlus < rows && !actualCoordinates[nextValidIPlus][j]->valid)
-    {
-      nextValidIPlus++;
-    }
-
-    int nextValidIMinus = i - 1;
-    while (nextValidIMinus >= 0 && !actualCoordinates[nextValidIMinus][j]->valid)
-    {
-      nextValidIMinus--;
-    }
-
-    if (nextValidIPlus < rows && nextValidIMinus >= 0)
-    {
-      return (heights[nextValidIPlus][j] - heights[nextValidIMinus][j]) / (actualCoordinates[nextValidIPlus][j]->y - actualCoordinates[nextValidIMinus][j]->y);
-    }
-    else if (nextValidIPlus < rows)
-    {
-      return (heights[nextValidIPlus][j] - heights[i][j]) / (actualCoordinates[nextValidIPlus][j]->y - actualCoordinates[i][j]->y);
-    }
-    else if (nextValidIMinus >= 0)
-    {
-      return (heights[nextValidIMinus][j] - heights[i][j]) / (actualCoordinates[nextValidIMinus][j]->y - actualCoordinates[i][j]->y);
-    }
-    else
-    {
-      return 0.0f;
-    }
-  }
 }

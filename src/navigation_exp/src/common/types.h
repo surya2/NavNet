@@ -21,25 +21,22 @@ struct Vertex
     }
 };
 
-struct Coordinate
-{
-    float x, y;
-    bool valid = false;
-    Coordinate(float x, float y) : x(x), y(y) { valid = true; }
-    Coordinate() {}
-    Coordinate &operator=(const Coordinate &other)
-    {
-        if (this == &other)
-            return *this;
-        x = other.x;
-        y = other.y;
-        valid = other.valid;
-        return *this;
-    }
-};
-
 struct Matrices
 {
-    std::vector<std::vector<float>> heights;
-    std::vector<std::vector<Coordinate>> actualCoordinates;
+    static constexpr int width = DEPTH_WIDTH;
+    static constexpr int height = DEPTH_HEIGHT;
+
+    float heights[DEPTH_PIXELS] = {};
+    float coordX[DEPTH_PIXELS] = {};
+    float coordY[DEPTH_PIXELS] = {};
+    uint8_t valid[DEPTH_PIXELS] = {};
+
+    static constexpr int idx(int x, int y) { return y * DEPTH_WIDTH + x; }
+};
+
+struct DeprojParams
+{
+    float fx, fy, ppx, ppy; // depth intrinsics
+    float depth_units;      // meters per raw depth unit
+    float cos_a, sin_a;     // rotation of the camera about the x axis
 };

@@ -9,6 +9,7 @@
 #define GOAL_Y 1.0f
 
 volatile std::sig_atomic_t halt = 0;
+static Matrices matrices;
 
 void signal_handler(int signal)
 {
@@ -36,21 +37,15 @@ int main()
     }
     while (!halt)
     {
-        vertices = new std::vector<Vertex>();
-        std::shared_ptr<Matrices> retMatrices = capture_depth_matrix(vertices, DECIMATION_KERNEL_SIZE, pipe);
-        if (retMatrices)
-        {
-            std::vector<Vertex> obstacleVertices;
-            ObstacleClusteringTree obstacleTree(2);
-            ParallelGradientCalculator::calculateGradientsParallel(retMatrices->heights, retMatrices->actualCoordinates, GRADIENT_THREADS, obstacleVertices, obstacleTree);
-            std::pair<int, int> startIndices = {static_cast<int>(retMatrices->actualCoordinates.size()) - 1, static_cast<int>(retMatrices->actualCoordinates[0].size()) / 2};
-            Coordinate &startCoord = retMatrices->actualCoordinates[startIndices.first][startIndices.second];
-            Vertex start(startCoord.x, startCoord.y, 0);
-            AStarPathPlanner planner(obstacleTree, Vertex(GOAL_X, GOAL_Y, 0));
-            std::vector<Vertex> path = planner.planPath(retMatrices->actualCoordinates, start, startIndices);
-        }
-        delete *vertices;
-        vertices.reset();
+        capture_depth_matrix(matrices, DECIMATION_KERNEL_SIZE, pipe);
+        std::vector<Vertex> obstacleVertices;
+        ObstacleClusteringTree obstacleTree(2);
+        ParallelGradientCalculator::calculateGradientsParallel(retMatrices->heights, retMatrices->actualCoordinates, GRADIENT_THREADS, obstacleVertices, obstacleTree);
+        std::pair<int, int> startIndices = {static_cast<int>(retMatrices->actualCoordinates.size()) - 1, static_cast<int>(retMatrices->actualCoordinates[0].size()) / 2};
+        Coordinate &startCoord = retMatrices->actualCoordinates[startIndices.first][startIndices.second];
+        Vertex start(startCoord.x, startCoord.y, 0);
+        AStarPathPlanner planner(obstacleTree, Vertex(GOAL_X, GOAL_Y, 0));
+        std::vector<Vertex> path = planner.planPath(retMatrices->actualCoordinates, start, startIndices);
     }
     pipe.stop();
     return 0;

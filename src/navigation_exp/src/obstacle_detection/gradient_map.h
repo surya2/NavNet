@@ -1,38 +1,17 @@
 #ifndef GRADIENTMAP_H
 #define GRADIENTMAP_H
 
-#include <vector>
 #include <cmath>
+#include <cstdint>
+#include <vector>
 #include "common/types.h"
 #include "obstacle_detection/obstacle_clustering_tree.h"
 
-#define OVERLAP 1
+#ifndef GRADIENT_MAX_THREADS
+#define GRADIENT_MAX_THREADS 16
+#endif
 
-struct Tile
-{
-    int sRow, sCol;
-    int rows, cols;
-    std::vector<std::vector<float>> data;
-    std::vector<std::vector<std::shared_ptr<Coordinate>>> actualCoors;
-    float tileSum;
-    float tileSquareSum;
-    float tileMean;
-    float tileStdDev;
-
-    float gradientSum;
-    float gradientSquareSum;
-    float gradientMean;
-
-    int numValidPoints;
-
-    Tile(int sRow, int sCol, int r, int c)
-        : sRow(sRow), sCol(sCol), rows(r), cols(c),
-          data(r, std::vector<float>(c)), actualCoors(r, std::vector<std::shared_ptr<Coordinate>>(c)),
-          tileSum(0.0f), numValidPoints(0), gradientSum(0.0f), tileMean(0.0f), gradientMean(0.0f),
-          tileSquareSum(0.0f), tileStdDev(0.0f), gradientSquareSum(0.0f)
-    {
-    }
-};
+#define GRADIENT_TIMING
 
 struct Stats
 {
@@ -45,41 +24,50 @@ struct Stats
     float localGradSumSquares;
 };
 
+struct GradientPartialSums
+{
+    long long count = 0;
+    double sum_heights = 0.0;
+    double sum_heights_squared = 0.0;
+    double sum_gradients = 0.0;
+    double sum_gradients_squared = 0.0;
+};
+
 float magnitude(float x, float y);
 
 class ParallelGradientCalculator
 {
 public:
-    static std::vector<std::vector<float>> calculateGradientsParallel(
-        const std::vector<std::vector<float>> &heights,
-        const std::vector<std::vector<Coordinate>> &actualCoordinates,
-        int numThreads, std::vector<Vertex> &obstacleVertices,
+    static const float *calculateGradientsParallel(
+        const Matrices &m,
+        int numThreads,
+        std::vector<Vertex> &obstacleVertices,
         ObstacleClusteringTree &obstacleTree);
 
 private:
-    static Tile createTileWithOverlap(
-        const std::vector<std::vector<float>> &heights,
-        const std::vector<std::vector<Coordinate>> &actualCoordinates,
-        int startRow, int startCol,
-        int rows, int cols);
-
-    static std::vector<std::vector<float>> calculateTileGradients(
-        Tile &tile);
-
-    static void copyTileResults(
-        std::vector<std::vector<float>> &result,
-        const std::vector<std::vector<float>> &tileGradients,
-        const Tile &tile);
+    // Raw-pointer compute functions: no std::vector, no heap, no shared_ptr.
+    // These are the pieces that can later be turned into FPGA kernels.
+    static void computeGradientRows(
+        const float *heights,
+        const float *coordX,
+        const float *coordY,
+        const uint8_t *valid,
+        float *gradients,
+        int rowBegin,
+        int rowEnd,
+        GradientPartialSums &sums);
 
     static float calculatePartialX(
-        const std::vector<std::vector<float>> &heights,
-        const std::vector<std::vector<std::shared_ptr<Coordinate>>> &actualCoordinates,
-        int i, int j, int cols);
+        const float *heights,
+        const float *coordX,
+        const uint8_t *valid,
+        int row, int col);
 
     static float calculatePartialY(
-        const std::vector<std::vector<float>> &heights,
-        const std::vector<std::vector<std::shared_ptr<Coordinate>>> &actualCoordinates,
-        int i, int j, int rows);
+        const float *heights,
+        const float *coordY,
+        const uint8_t *valid,
+        int row, int col);
 };
 
 #endif
