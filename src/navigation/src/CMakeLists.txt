@@ -37,25 +37,12 @@ set(FORCE_RSUSB_BACKEND ON CACHE BOOL "" FORCE)
 
 add_subdirectory(${REALSENSE_SOURCE_DIR} ${CMAKE_BINARY_DIR}/librealsense2)
 
-#find_package(realsense2 REQUIRED)
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
-message(STATUS "Realsense include dirs: ${realsense2_INCLUDE_DIRS}")
-message(STATUS "Realsense libraries: ${realsense2_LIBRARY}")
-
-# Configure RealSense build options
-set(BUILD_WITH_STATIC_CRT OFF CACHE BOOL "Build with static C runtime" FORCE)
-set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
-
-set(CMAKE_MODULE_PATH "${REALSENSE_SOURCE_DIR}/CMake" ${CMAKE_MODULE_PATH})
-
-# Add RealSense library subdirectory
-#add_subdirectory(${REALSENSE_SOURCE_DIR})
-
 add_library(capture STATIC capture/realsense_capture.cpp capture/extract_capture.cpp)
 target_include_directories(capture PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${REALSENSE_INCLUDE_DIR})
-target_link_libraries(capture PUBLIC ${REALSENSE_LIBRARY} ${OpenCV_LIBS})
+target_link_libraries(capture PUBLIC realsense2 ${OpenCV_LIBS})
 
 add_library(obstacle_detection STATIC obstacle_detection/gradient_map.cpp obstacle_detection/obstacle_clustering_tree.cpp)
 target_include_directories(obstacle_detection PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -74,11 +61,3 @@ target_link_libraries(gradientMapTest PRIVATE capture obstacle_detection)
 
 add_executable(obstacleDetectionTest ../test/obstacle_detection_test.cpp)
 target_link_libraries(obstacleDetectionTest PRIVATE capture obstacle_detection)
-
-foreach(target captureTest navigation gradientMapTest obstacleDetectionTest)
-    target_include_directories(${target} PRIVATE
-        ${REALSENSE_INCLUDE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-    target_link_libraries(${target} PRIVATE realsense2 ${OpenCV_LIBS})
-endforeach()
