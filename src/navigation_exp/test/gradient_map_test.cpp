@@ -6,27 +6,23 @@
 #include <cassert>
 #include "obstacle_detection/obstacle_clustering_tree.h"
 
+static Matrices matrices;
+
 int main()
 {
     std::vector<Vertex> vertices;
-    std::shared_ptr<Matrices> matrices = runMatrixCollector(vertices, 4);
+    if (!runMatrixCollector(matrices, vertices, 4))
+        return 1;
     std::vector<Vertex> obstacleVertices;
     ObstacleClusteringTree obstacleTree(2);
-    std::vector<std::vector<float>> gradients = ParallelGradientCalculator::calculateGradientsParallel(matrices->heights, matrices->actualCoordinates, 3, obstacleVertices, obstacleTree);
-    std::cout << "Gradint size: " << gradients.size() << std::endl;
-    assert(gradients.size() == matrices->heights.size());
+    const float *gradients = ParallelGradientCalculator::calculateGradientsParallel(matrices, 3, obstacleVertices, obstacleTree);
 
     std::vector<Vertex> gradientVertices;
-    for (size_t i = 0; i < gradients.size(); i++)
+    for (int i = 0; i < DEPTH_PIXELS; i++)
     {
-        for (size_t j = 0; j < gradients[i].size(); j++)
+        if (matrices.valid[i])
         {
-            if (matrices->actualCoordinates[i][j].valid)
-            {
-                float x = matrices->actualCoordinates[i][j].x;
-                float y = matrices->actualCoordinates[i][j].y;
-                gradientVertices.push_back(Vertex(x, y, gradients[i][j]));
-            }
+            gradientVertices.push_back(Vertex(matrices.coordX[i], matrices.coordY[i], gradients[i]));
         }
     }
 
@@ -36,42 +32,42 @@ int main()
 
     /* Measure runtime of single thread :*/
     auto start = std::chrono::high_resolution_clock::now();
-    std::vector<std::vector<float>> gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices->heights, matrices->actualCoordinates, 1, obstacleVertices, obstacleTree);
+    const float *gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices, 1, obstacleVertices, obstacleTree);
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
     std::cout << "Single thread runtime: " << elapsed.count() << "s" << std::endl;
     assert(elapsed.count() > 0 && elapsed.count() < 1);
 
     start = std::chrono::high_resolution_clock::now();
-    gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices->heights, matrices->actualCoordinates, 2, obstacleVertices, obstacleTree);
+    gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices, 2, obstacleVertices, obstacleTree);
     end = std::chrono::high_resolution_clock::now();
     elapsed = end - start;
     std::cout << "2 threads runtime: " << elapsed.count() << "s" << std::endl;
     assert(elapsed.count() > 0 && elapsed.count() < 0.04);
 
     start = std::chrono::high_resolution_clock::now();
-    gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices->heights, matrices->actualCoordinates, 3, obstacleVertices, obstacleTree);
+    gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices, 3, obstacleVertices, obstacleTree);
     end = std::chrono::high_resolution_clock::now();
     elapsed = end - start;
     std::cout << "3 threads runtime: " << elapsed.count() << "s" << std::endl;
     assert(elapsed.count() > 0 && elapsed.count() < 0.04);
 
     start = std::chrono::high_resolution_clock::now();
-    gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices->heights, matrices->actualCoordinates, 4, obstacleVertices, obstacleTree);
+    gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices, 4, obstacleVertices, obstacleTree);
     end = std::chrono::high_resolution_clock::now();
     elapsed = end - start;
     std::cout << "4 threads runtime: " << elapsed.count() << "s" << std::endl;
     assert(elapsed.count() > 0 && elapsed.count() < 0.04);
 
     start = std::chrono::high_resolution_clock::now();
-    gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices->heights, matrices->actualCoordinates, 5, obstacleVertices, obstacleTree);
+    gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices, 5, obstacleVertices, obstacleTree);
     end = std::chrono::high_resolution_clock::now();
     elapsed = end - start;
     std::cout << "5 threads runtime: " << elapsed.count() << "s" << std::endl;
     assert(elapsed.count() > 0 && elapsed.count() < 0.04);
 
     start = std::chrono::high_resolution_clock::now();
-    gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices->heights, matrices->actualCoordinates, 6, obstacleVertices, obstacleTree);
+    gradientsSingle = ParallelGradientCalculator::calculateGradientsParallel(matrices, 6, obstacleVertices, obstacleTree);
     end = std::chrono::high_resolution_clock::now();
     elapsed = end - start;
     std::cout << "6 threads runtime: " << elapsed.count() << "s" << std::endl;

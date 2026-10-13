@@ -6,8 +6,17 @@
 #include <memory>
 #include <thread>
 #include <mutex>
+#include <cstdint>
 
 #define M_PI 3.14159265358979323846
+
+#ifndef DEPTH_WIDTH
+#define DEPTH_WIDTH 212
+#endif
+#ifndef DEPTH_HEIGHT
+#define DEPTH_HEIGHT 120
+#endif
+#define DEPTH_PIXELS (DEPTH_WIDTH * DEPTH_HEIGHT)
 
 struct Vertex
 {

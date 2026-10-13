@@ -6,12 +6,17 @@
 #include <unistd.h>
 #include <cstring>
 #include <opencv2/opencv.hpp>
+#include <chrono>
+#include <limits>
 namespace fs = std::filesystem;
 
 static uint8_t *monoBuffer = nullptr;
 static size_t bufferSize = 0;
 
 static rs2::decimation_filter decimation;
+
+static const float angle = ((-180.0f + REALSENSE_ANGLE_FROM_HORIZONTAL) * static_cast<float>(M_PI)) / 180.0f;
+static DeprojParams params{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, std::cos(angle), std::sin(angle)};
 // ImageWriter imgWriter;
 
 // void sendPic(int width, int height) {
@@ -65,73 +70,59 @@ void save_to_ply(const std::vector<Vertex> &vertices, const std::string &filenam
     }
 }
 
-void save_matrices_to_txt(const std::vector<std::vector<float>> &heights,
-                          const std::vector<std::vector<Coordinate>> &actualCoordinates,
-                          const std::string &filename)
+void save_matrices_to_txt(const Matrices &matrices, const std::string &filename)
 {
     fs::path filepath = fs::path("../../../test/assets/matrix_benchmarks") / filename;
     std::ofstream out(filepath);
 
-    out << heights.size() << " " << heights[0].size() << "\n";
+    out << DEPTH_HEIGHT << " " << DEPTH_WIDTH << "\n";
 
-    for (size_t i = 0; i < heights.size(); i++)
+    for (int i = 0; i < DEPTH_PIXELS; i++)
     {
-        for (size_t j = 0; j < heights[i].size(); j++)
+        if (matrices.valid[i])
         {
-            float height = heights[i][j];
-            const Coordinate &coord = actualCoordinates[i][j];
-
-            if (coord.valid)
-            {
-                out << height << " " << coord.x << " " << coord.y << "\n";
-            }
-            else
-            {
-                out << height << " inf inf\n";
-            }
+            out << matrices.heights[i] << " " << matrices.coordX[i] << " " << matrices.coordY[i] << "\n";
+        }
+        else
+        {
+            out << matrices.heights[i] << " inf inf\n";
         }
     }
     out.close();
 }
 
-std::shared_ptr<Matrices> load_matrices_from_txt(const std::string &filename)
+bool load_matrices_from_txt(const std::string &filename, Matrices &matrices)
 {
     std::ifstream in(filename);
     if (!in.is_open())
     {
         std::cerr << "Error: Could not open file " << filename << std::endl;
-        return nullptr;
+        return false;
     }
 
-    size_t rows, cols;
+    int rows, cols;
     in >> rows >> cols;
-
-    auto matrices = std::make_shared<Matrices>();
-    matrices->heights = std::vector<std::vector<float>>(rows, std::vector<float>(cols));
-    matrices->actualCoordinates = std::vector<std::vector<Coordinate>>(rows, std::vector<Coordinate>(cols));
+    if (rows != DEPTH_HEIGHT || cols != DEPTH_WIDTH)
+    {
+        std::cerr << "Error: " << filename << " is " << rows << "x" << cols << " but DEPTH_HEIGHT x DEPTH_WIDTH is "
+                  << DEPTH_HEIGHT << "x" << DEPTH_WIDTH << std::endl;
+        return false;
+    }
 
     float height, x, y;
-    for (size_t i = 0; i < rows; i++)
+    for (int i = 0; i < DEPTH_PIXELS; i++)
     {
-        for (size_t j = 0; j < cols; j++)
-        {
-            in >> height >> x >> y;
-            matrices->heights[i][j] = height;
-
-            if (x == std::numeric_limits<float>::infinity() &&
-                y == std::numeric_limits<float>::infinity())
-            {
-                matrices->actualCoordinates[i][j] = Coordinate();
-            }
-            else
-            {
-                matrices->actualCoordinates[i][j] = Coordinate(x, y);
-            }
-        }
+        in >> height >> x >> y;
+        matrices.heights[i] = height;
+        const bool valid = !(x == std::numeric_limits<float>::infinity() &&
+                             y == std::numeric_limits<float>::infinity());
+        matrices.coordX[i] = valid ? x : 0.0f;
+        matrices.coordY[i] = valid ? y : 0.0f;
+        matrices.valid[i] = valid;
     }
 
     in.close();
-    return matrices;
+    return true;
 }
 
 void processColorFrame(rs2::frame &color)
@@ -212,7 +203,7 @@ void deproject_cpu(const uint16_t *depth,
     }
 }
 
-void capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pipeline &pipe)
+bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pipeline &pipe)
 {
     try
     {
@@ -281,17 +272,17 @@ void capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
                   << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms\n";
 #endif
  
-        return matrices;
+        return true;
     }
     catch (const rs2::error &e)
     {
         std::cerr << "RealSense error calling " << e.get_failed_function() << "(" << e.get_failed_args() << "):\n"
                   << e.what() << std::endl;
-        return nullptr;
+        return false;
     }
     catch (const std::exception &e)
     {
         std::cerr << "Error: " << e.what() << std::endl;
-        return nullptr;
+        return false;
     }
 }

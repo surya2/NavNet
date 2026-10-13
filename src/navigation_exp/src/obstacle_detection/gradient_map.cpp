@@ -98,12 +98,12 @@ float ParallelGradientCalculator::calculatePartialY(
     a = inc*DEPTH_WIDTH+col;
     b = dec*DEPTH_WIDTH+col;
   }
-  else if (hasInc)
+  else if (hasIncNeigh)
   {
     a = inc * DEPTH_WIDTH + col;
     b = row * DEPTH_WIDTH + col;
   }
-  else if (hasDec)
+  else if (hasDecNeigh)
   {
     a = dec * DEPTH_WIDTH + col;
     b = row * DEPTH_WIDTH + col;
@@ -251,7 +251,7 @@ const float *ParallelGradientCalculator::calculateGradientsParallel(
 
       if (isGlobalOutlier || isGradientOutlier)
       {
-        const Vertex partOfObstacle(m.coordX[i], m.coordY[i], m.heights[i]);
+        Vertex partOfObstacle(m.coordX[i], m.coordY[i], m.heights[i]);
         obstacleVertices.push_back(partOfObstacle);
         obstacleTree.add(partOfObstacle);
       }

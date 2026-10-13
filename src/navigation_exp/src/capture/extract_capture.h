@@ -7,6 +7,6 @@
 #include <memory>
 #include "capture/realsense_capture.h"
 
-std::shared_ptr<Matrices> runMatrixCollector(std::vector<Vertex> &vertices, int decimationKernelSize);
+bool runMatrixCollector(Matrices &matrices, std::vector<Vertex> &vertices, int decimationKernelSize);
 
 #endif

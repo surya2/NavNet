@@ -166,12 +166,12 @@ std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current)
     float prev_heading = 0.0f;
     while (current != nullptr)
     {
-        path.push_back(Vertex(current->coordinate->x, current->coordinate->y, 0));
+        path.push_back(Vertex(current->x, current->y, 0));
         if (prev != nullptr)
         {
             // Calculate heading to current point
-            float dx = current->coordinate->x - prev->coordinate->x;
-            float dy = current->coordinate->y - prev->coordinate->y;
+            float dx = current->x - prev->x;
+            float dy = current->y - prev->y;
             float target_heading = atan2(dy, dx);
 
             // Calculate angular difference (need to handle wrap-around)
@@ -202,7 +202,7 @@ std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current)
         }
         // if (vizSocket.isConnected())
         // {
-        //     vizSocket.sendPathPoint(current->coordinate->x, current->coordinate->y);
+        //     vizSocket.sendPathPoint(current->x, current->y);
         //     // vizSocket.sendTwist(linear_velocity, angular_velocity, twists.size());
         //     usleep(50000); // 50ms delay
         // }
@@ -214,15 +214,18 @@ std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current)
 
 bool AStarPathPlanner::isDestination(PathPoint *current)
 {
-    return fabs(current->coordinate->x - goal.x) <= 0.1 && fabs(current->coordinate->y - goal.y) <= 0.1;
+    return fabs(current->x - goal.x) <= 0.1 && fabs(current->y - goal.y) <= 0.1;
 }
 
-std::vector<Vertex> AStarPathPlanner::planPath(std::vector<std::vector<Coordinate>> &actualCoordinates,
+std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
                                                Vertex &start,
                                                std::pair<int, int> &startIndices)
 {
+    constexpr int rows = DEPTH_HEIGHT;
+    constexpr int cols = DEPTH_WIDTH;
+
     std::cout << "\n=== Debug Information ===\n";
-    std::cout << "Matrix dimensions: " << actualCoordinates.size() << "x" << actualCoordinates[0].size() << std::endl;
+    std::cout << "Matrix dimensions: " << rows << "x" << cols << std::endl;
     std::cout << "Start indices: (" << startIndices.first << "," << startIndices.second << ")" << std::endl;
     std::cout << "Start coordinates: (" << start.x << "," << start.y << ")" << std::endl;
     std::cout << "Goal coordinates: (" << goal.x << "," << goal.y << ")" << std::endl;
@@ -232,30 +235,34 @@ std::vector<Vertex> AStarPathPlanner::planPath(std::vector<std::vector<Coordinat
 
     // VisualizationSocket vizSocket;
 
-    costArray.clear();
-    costArray.resize(actualCoordinates.size() * actualCoordinates[0].size(), nullptr);
+    for (auto &point : costArray)
+    {
+        delete point;
+        point = nullptr;
+    }
 
     std::priority_queue<std::pair<int, float>,
                         std::vector<std::pair<int, float>>,
                         CompareCoordinate>
         openSet;
 
-    int startIndex = startIndices.first * actualCoordinates[0].size() + startIndices.second;
+    int startIndex = startIndices.first * cols + startIndices.second;
 
-    if (startIndices.first >= actualCoordinates.size() ||
-        startIndices.second >= actualCoordinates[0].size())
+    if (startIndices.first >= rows ||
+        startIndices.second >= cols)
     {
         std::cout << "Error: Start indices out of bounds!" << std::endl;
         return std::vector<Vertex>();
     }
 
-    Coordinate *startCoord = &actualCoordinates[startIndices.first][startIndices.second];
-    std::cout << "Start coordinate valid: " << (startCoord->valid ? "true" : "false") << std::endl;
-    std::cout << "Start coordinate actual position: (" << startCoord->x << "," << startCoord->y << ")" << std::endl;
+    const bool startValid = m.valid[startIndex];
+    std::cout << "Start coordinate valid: " << (startValid ? "true" : "false") << std::endl;
+    std::cout << "Start coordinate actual position: (" << m.coordX[startIndex] << "," << m.coordY[startIndex] << ")" << std::endl;
 
-    float startCost = startCoord->valid ? 0.0f : INVALID_POINT_PENALTY;
+    float startCost = startValid ? 0.0f : INVALID_POINT_PENALTY;
     PathPoint *startNode = new PathPoint(nullptr,
-                                         startCoord,
+                                         m.coordX[startIndex],
+                                         m.coordY[startIndex],
                                          startIndices.first,
                                          startIndices.second,
                                          startCost,
@@ -315,29 +322,30 @@ std::vector<Vertex> AStarPathPlanner::planPath(std::vector<std::vector<Coordinat
                 int newRow = current->indices.first + dy;
                 int newCol = current->indices.second + dx;
 
-                // Check bounds and whether the actualCoordinates array is empty
-                if (newRow < 0 || newRow >= actualCoordinates.size() ||
-                    newCol < 0 || newCol >= actualCoordinates[0].size() ||
-                    actualCoordinates.empty() || actualCoordinates[0].empty())
+                if (newRow < 0 || newRow >= rows ||
+                    newCol < 0 || newCol >= cols)
                 {
                     continue;
                 }
 
-                Coordinate *nextCoord = &actualCoordinates[newRow][newCol];
+                const int neighborIndex = newRow * cols + newCol;
+                const float nextX = m.coordX[neighborIndex];
+                const float nextY = m.coordY[neighborIndex];
+                const bool nextValid = m.valid[neighborIndex];
                 float moveCost = 0.0; //  = (abs(dx) + abs(dy) == 2) ? 1.414f : 1.0f
 
-                if (!nextCoord->valid)
+                if (!nextValid)
                 {
                     moveCost += INVALID_POINT_PENALTY;
                 }
 
-                Vertex v(nextCoord->x, nextCoord->y, 0);
+                Vertex v(nextX, nextY, 0);
                 auto obstacle = obstacleTree.findNearestObstacle(v);
                 if (obstacle)
                 {
                     float obstacle_dist = static_cast<float>(sqrt(
-                        pow(obstacle->getVertex().x - nextCoord->x, 2) +
-                        pow(obstacle->getVertex().y - nextCoord->y, 2)));
+                        pow(obstacle->getVertex().x - nextX, 2) +
+                        pow(obstacle->getVertex().y - nextY, 2)));
                     if (obstacle_dist < 0.2)
                     {
                         continue;
@@ -345,25 +353,24 @@ std::vector<Vertex> AStarPathPlanner::planPath(std::vector<std::vector<Coordinat
                 }
 
                 float localCost = current->costs.first;
-                if (nextCoord->valid)
+                if (nextValid)
                 {
-                    localCost += static_cast<float>(sqrt(pow(nextCoord->x - current->coordinate->x, 2) + pow(nextCoord->y - current->coordinate->y, 2)));
+                    localCost += static_cast<float>(sqrt(pow(nextX - current->x, 2) + pow(nextY - current->y, 2)));
                 }
                 else
                 {
                     localCost += 1.0f;
                 }
                 float newCost = localCost + moveCost;
-                int neighborIndex = newRow * actualCoordinates[0].size() + newCol;
                 PathPoint *neighbor = costArray[neighborIndex];
                 if (!neighbor)
                 {
                     neighborsFound++;
-                    if (nextCoord->valid)
+                    if (nextValid)
                     {
-                        newCost += hValue(nextCoord->x, nextCoord->y);
+                        newCost += hValue(nextX, nextY);
                     }
-                    neighbor = new PathPoint(current, nextCoord, newRow, newCol,
+                    neighbor = new PathPoint(current, nextX, nextY, newRow, newCol,
                                              localCost, newCost);
                     neighbor->parent = current;
                     costArray[neighborIndex] = neighbor;
@@ -374,8 +381,8 @@ std::vector<Vertex> AStarPathPlanner::planPath(std::vector<std::vector<Coordinat
                     // if (vizSocket.isConnected())
                     // {
                     //     vizSocket.sendExploredPoint(
-                    //         nextCoord->x, nextCoord->y,
-                    //         current->coordinate->x, current->coordinate->y);
+                    //         nextX, nextY,
+                    //         current->x, current->y);
                     // }
                 }
                 else if (newCost < neighbor->costs.first)
@@ -384,9 +391,9 @@ std::vector<Vertex> AStarPathPlanner::planPath(std::vector<std::vector<Coordinat
                     PathPoint *oldParent = neighbor->parent;
                     neighbor->parent = current;
                     neighbor->costs.first = localCost;
-                    if (neighbor->coordinate->valid)
+                    if (nextValid)
                     {
-                        newCost += hValue(nextCoord->x, nextCoord->y);
+                        newCost += hValue(nextX, nextY);
                     }
                     neighbor->costs.second = newCost;
 #pragma omp critical
@@ -396,8 +403,8 @@ std::vector<Vertex> AStarPathPlanner::planPath(std::vector<std::vector<Coordinat
                     // if (vizSocket.isConnected() && oldParent != current)
                     // {
                     //     vizSocket.sendExploredPoint(
-                    //         nextCoord->x, nextCoord->y,
-                    //         current->coordinate->x, current->coordinate->y);
+                    //         nextX, nextY,
+                    //         current->x, current->y);
                     // }
                 }
             }

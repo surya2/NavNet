@@ -6,24 +6,22 @@
 #include <chrono>
 #include <cassert>
 
+static Matrices matrices;
+
 int main()
 {
     std::vector<Vertex> vertices;
-    std::shared_ptr<Matrices> matrices = runMatrixCollector(vertices, 4);
+    if (!runMatrixCollector(matrices, vertices, 4))
+        return 1;
     std::vector<Vertex> obstacleVertices;
     ObstacleClusteringTree obstacleTree(2);
-    std::vector<std::vector<float>> gradients = ParallelGradientCalculator::calculateGradientsParallel(matrices->heights, matrices->actualCoordinates, 3, obstacleVertices, obstacleTree);
+    const float *gradients = ParallelGradientCalculator::calculateGradientsParallel(matrices, 3, obstacleVertices, obstacleTree);
     std::vector<Vertex> gradientVertices;
-    for (size_t i = 0; i < gradients.size(); i++)
+    for (int i = 0; i < DEPTH_PIXELS; i++)
     {
-        for (size_t j = 0; j < gradients[i].size(); j++)
+        if (matrices.valid[i])
         {
-            if (matrices->actualCoordinates[i][j].valid)
-            {
-                float x = matrices->actualCoordinates[i][j].x;
-                float y = matrices->actualCoordinates[i][j].y;
-                gradientVertices.push_back(Vertex(x, y, gradients[i][j]));
-            }
+            gradientVertices.push_back(Vertex(matrices.coordX[i], matrices.coordY[i], gradients[i]));
         }
     }
 

@@ -22,7 +22,6 @@ void signal_handler(int signal)
 int main()
 {
     std::signal(SIGINT, signal_handler);
-    std::optional<std::vector<Vertex> *> vertices;
     rs2::pipeline pipe;
     rs2::config cfg;
 
@@ -37,15 +36,18 @@ int main()
     }
     while (!halt)
     {
-        capture_depth_matrix(matrices, DECIMATION_KERNEL_SIZE, pipe);
+        if (!capture_depth_matrix(matrices, DECIMATION_KERNEL_SIZE, pipe))
+        {
+            continue;
+        }
         std::vector<Vertex> obstacleVertices;
         ObstacleClusteringTree obstacleTree(2);
-        ParallelGradientCalculator::calculateGradientsParallel(retMatrices->heights, retMatrices->actualCoordinates, GRADIENT_THREADS, obstacleVertices, obstacleTree);
-        std::pair<int, int> startIndices = {static_cast<int>(retMatrices->actualCoordinates.size()) - 1, static_cast<int>(retMatrices->actualCoordinates[0].size()) / 2};
-        Coordinate &startCoord = retMatrices->actualCoordinates[startIndices.first][startIndices.second];
-        Vertex start(startCoord.x, startCoord.y, 0);
+        ParallelGradientCalculator::calculateGradientsParallel(matrices, GRADIENT_THREADS, obstacleVertices, obstacleTree);
+        std::pair<int, int> startIndices = {DEPTH_HEIGHT - 1, DEPTH_WIDTH / 2};
+        const int startIndex = Matrices::idx(startIndices.second, startIndices.first);
+        Vertex start(matrices.coordX[startIndex], matrices.coordY[startIndex], 0);
         AStarPathPlanner planner(obstacleTree, Vertex(GOAL_X, GOAL_Y, 0));
-        std::vector<Vertex> path = planner.planPath(retMatrices->actualCoordinates, start, startIndices);
+        std::vector<Vertex> path = planner.planPath(matrices, start, startIndices);
     }
     pipe.stop();
     return 0;
