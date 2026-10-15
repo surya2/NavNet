@@ -5,7 +5,7 @@
   "scripts": {
     "relay": "node relay.js",
     "dev": "vite --host",
-    "start": "node relay.js & vite --host"
+    "start": "vite --host"
   },
   "dependencies": {
     "react": "^18.3.1",
