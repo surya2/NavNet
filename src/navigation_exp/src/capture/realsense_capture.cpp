@@ -216,6 +216,7 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
  
         rs2::frameset frames = pipe.wait_for_frames();
         rs2::depth_frame depth = decimation.process(frames.get_depth_frame());
+        std::cout << "Depth width: " << depth.get_width() << " and height: " << depth.get_height() << std::endl;
         rs2::frame color = frames.get_color_frame();
         processColorFrame(color);
  
