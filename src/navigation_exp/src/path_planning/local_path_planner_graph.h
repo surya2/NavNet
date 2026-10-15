@@ -37,7 +37,7 @@ public:
         }
     }
 
-    std::vector<Vertex> retracePath(PathPoint *current);
+    std::vector<Vertex> retracePath(PathPoint *current, const Matrices &m);
 
     std::vector<Vertex> planPath(const Matrices &m, Vertex &start, std::pair<int, int> &startIndices);
 

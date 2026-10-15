@@ -50,8 +50,15 @@ target_include_directories(obstacle_detection PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 add_library(path_planning STATIC path_planning/local_path_planner_graph.cpp)
 target_link_libraries(path_planning PUBLIC obstacle_detection)
 
+find_path(LZ4_INCLUDE_DIR lz4.h REQUIRED)
+find_library(LZ4_LIBRARY lz4 REQUIRED)
+
+add_library(communication STATIC communication/frame_sender.cpp)
+target_include_directories(communication PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${LZ4_INCLUDE_DIR})
+target_link_libraries(communication PUBLIC ${LZ4_LIBRARY})
+
 add_executable(navigation startup.cpp)
-target_link_libraries(navigation PRIVATE capture obstacle_detection path_planning)
+target_link_libraries(navigation PRIVATE capture obstacle_detection path_planning communication)
 
 add_executable(captureTest ../test/capture_test.cpp)
 target_link_libraries(captureTest PRIVATE capture)

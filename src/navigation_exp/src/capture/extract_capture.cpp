@@ -9,10 +9,14 @@ bool runMatrixCollector(Matrices &matrices, std::vector<Vertex> &vertices, int d
     pipe.start(cfg);
     for (int i = 0; i < 30; i++)
         pipe.wait_for_frames();
-    if (!capture_depth_matrix(matrices, decimationKernelSize, pipe))
+    double captureElapsed;
+    if (!capture_depth_matrix(matrices, decimationKernelSize, pipe, captureElapsed))
         return false;
-    for (int i = 0; i < DEPTH_PIXELS; i++)
-        if (matrices.valid[i])
+    for (int i = 0; i < DEPTH_PIXELS; i++){
+        if (matrices.valid[i]){
             vertices.push_back(Vertex(matrices.coordX[i], matrices.coordY[i], matrices.heights[i]));
+        }
+    }
+    std::cout << "Capture elapsed time in ms: " << captureElapsed << std::endl;
     return true;
 }

@@ -203,10 +203,11 @@ void deproject_cpu(const uint16_t *depth,
     }
 }
 
-bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pipeline &pipe)
+bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pipeline &pipe, double &elapsed_time)
 {
     try
     {
+        auto start = std::chrono::steady_clock::now();
         static int lastMagnitude = -1;
         if (decimationKernelSize != lastMagnitude)
         {
@@ -272,7 +273,8 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
         std::cout << "deproject_cpu: "
                   << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms\n";
 #endif
- 
+        auto end = std::chrono::steady_clock::now();
+        elapsed_time = std::chrono::duration<double, std::milli>(end - start).count();
         return true;
     }
     catch (const rs2::error &e)

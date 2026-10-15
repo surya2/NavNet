@@ -157,7 +157,7 @@ struct CompareCoordinate
     }
 };
 
-std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current)
+std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current, const Matrices &m)
 {
     std::vector<Twist> twists;
     //VisualizationSocket vizSocket;
@@ -166,7 +166,7 @@ std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current)
     float prev_heading = 0.0f;
     while (current != nullptr)
     {
-        path.push_back(Vertex(current->x, current->y, 0));
+        path.push_back(Vertex(current->x, current->y, m.heights[Matrices::idx(current->indices.second, current->indices.first)]));
         if (prev != nullptr)
         {
             // Calculate heading to current point
@@ -291,7 +291,7 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
         if (isDestination(current))
         {
             std::cout << "Path found after " << iterations << " iterations!" << std::endl;
-            std::vector<Vertex> path = retracePath(current);
+            std::vector<Vertex> path = retracePath(current, m);
             for (auto &point : costArray)
             {
                 delete point;
