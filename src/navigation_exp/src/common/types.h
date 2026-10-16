@@ -8,8 +8,6 @@
 #include <mutex>
 #include <cstdint>
 
-#define M_PI 3.14159265358979323846
-
 #ifndef DEPTH_WIDTH
 #define DEPTH_WIDTH 212
 #endif
@@ -17,18 +15,6 @@
 #define DEPTH_HEIGHT 120
 #endif
 #define DEPTH_PIXELS (DEPTH_WIDTH * DEPTH_HEIGHT)
-
-struct Vertex
-{
-    float x, y, z;
-    Vertex() : x(-1), y(-1), z(-1) {}
-    Vertex(float x, float y, float z) : x(x), y(y), z(z) {}
-
-    bool operator==(const Vertex &other) const
-    {
-        return std::fabs(x - other.x) <= 0.5 && std::fabs(y - other.y) <= 0.5 && std::fabs(z - other.z) <= 0.5;
-    }
-};
 
 struct Matrices
 {

@@ -2,6 +2,7 @@
 #define OBSTACLECLUSTERING_H
 
 #include "common/types.h"
+#include "common/mathematics.h"
 
 class ObstacleNode
 {

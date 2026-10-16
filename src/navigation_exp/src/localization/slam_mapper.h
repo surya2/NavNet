@@ -5,6 +5,7 @@
 #include <cmath>
 #include <utility>
 #include "common/types.h"
+#include "common/mathematics.h"
 #include "obstacle_detection/obstacle_clustering_tree.h"
 
 class SLAM_Graph

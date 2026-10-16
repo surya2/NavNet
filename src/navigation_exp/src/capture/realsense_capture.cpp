@@ -17,24 +17,6 @@ static rs2::decimation_filter decimation;
 
 static const float angle = ((-180.0f + REALSENSE_ANGLE_FROM_HORIZONTAL) * static_cast<float>(M_PI)) / 180.0f;
 static DeprojParams params{0.0f, 0.0f, 0.0f, 0.0f, 0.0f, std::cos(angle), std::sin(angle)};
-// ImageWriter imgWriter;
-
-// void sendPic(int width, int height) {
-//     cv::Mat image(height, width, CV_8UC1, (void*)monoBuffer);
-//     std::vector<uchar> compressed_buf;
-//     std::vector<int> compression_params = {cv::IMWRITE_PNG_COMPRESSION, 3}; // 0 = fast, 9 = small
-
-//     cv::imencode(".png", image, compressed_buf, compression_params);
-//     std::cout << "Compressed size: " << compressed_buf.size() << " bytes" << std::endl;
-
-//     // int shm_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
-//     ftruncate(shm_fd, sizeof(SharedImage));
-//     void* shm_ptr = mmap(0, sizeof(SharedImage), PROT_WRITE | PROT_READ, MAP_SHARED, shm_fd, 0);
-//     auto* shared_img = static_cast<SharedImage*>(shm_ptr);
-//     shared_img->data_size = compressed_buf.size();
-//     std::memcpy(shared_img->data, compressed_buf.data(), compressed_buf.size());
-//     shared_img->frame_id.fetch_add(1, std::memory_order_release);
-// }
 
 void save_pic(int width, int height)
 {
@@ -167,16 +149,28 @@ void processColorFrame(rs2::frame &color)
     cv::Mat image(height, width, CV_8UC1, (void *)monoBuffer);
 }
 
-void deproject_cpu(const uint16_t *depth,
-                          const DeprojParams &p,
-                          float *out_x,
-                          float *out_y,
-                          float *out_z,
-                          uint8_t *out_valid)
+void deproject_cpu(const uint16_t *depth, const DeprojParams &p, float *out_x, float *out_y,
+        float *out_z,
+        uint8_t *out_valid,
+        Motion &motion)
 {
+    auto start = std::chrono::steady_clock::now();
+    Vertex ref_gravity_vector = Vertex(0, -1, 0);;
+    Vertex gravity_vector = motion.get_gravity_vector();
+    Vertex axis_of_rotation_vector = ~(motion.get_gravity_vector().cross(ref_gravity_vector));
+    float rotation_angle = std::acos(gravity_vector.dot(ref_gravity_vector));
+
+    Matrix<3,3> skew_symmetric_cross_prod_matrix = Matrix<3,3>({
+        0, -axis_of_rotation_vector.z, axis_of_rotation_vector.y,
+        axis_of_rotation_vector.z, 0, -axis_of_rotation_vector.x,
+        -axis_of_rotation_vector.y, axis_of_rotation_vector.x, 0
+    });
+    Matrix<3, 3> rotation_matrix = get_identity<3, 3>() + (std::sin(rotation_angle)*skew_symmetric_cross_prod_matrix) 
+        + (1-std::cos(rotation_angle))*(skew_symmetric_cross_prod_matrix*skew_symmetric_cross_prod_matrix);
+    
     for (int y = 0; y < DEPTH_HEIGHT; ++y){
         const float y_norm = (static_cast<float>(y) - p.ppy) / p.fy;
- 
+        
         for (int x = 0; x < DEPTH_WIDTH; ++x){
             const int i = y * DEPTH_WIDTH + x;
             const uint16_t raw = depth[i];
@@ -194,16 +188,25 @@ void deproject_cpu(const uint16_t *depth,
             const float px = ((static_cast<float>(x) - p.ppx) / p.fx) * d;
             const float py = y_norm * d;
             const float pz = d;
- 
-            out_x[i] = px;
-            out_y[i] = py * p.cos_a - pz * p.sin_a;
-            out_z[i] = py * p.sin_a + pz * p.cos_a;
+
+            Vertex rotated_point = rotation_matrix * Vertex(px, py, pz);
+            out_x[i] = rotated_point.x;
+            out_y[i] = rotated_point.y;
+            out_z[i] = rotated_point.z;
+            // out_x[i] = px;
+            // out_y[i] = py * p.cos_a - pz * p.sin_a;
+            // out_z[i] = py * p.sin_a + pz * p.cos_a;
+
             out_valid[i] = 1;
         }
     }
+    double elapsed_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    std::cout << "deproject_cpu elapsed time in ms: " << elapsed_time << std::endl;
 }
 
-bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pipeline &pipe, double &elapsed_time)
+bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pipeline &pipe, 
+    double &elapsed_time,
+    Motion &motion)
 {
     try
     {
@@ -215,66 +218,102 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
             lastMagnitude = decimationKernelSize;
         }
  
-        rs2::frameset frames = pipe.wait_for_frames();
-        rs2::depth_frame depth = decimation.process(frames.get_depth_frame());
-        std::cout << "Depth width: " << depth.get_width() << " and height: " << depth.get_height() << std::endl;
-        rs2::frame color = frames.get_color_frame();
-        processColorFrame(color);
- 
-        // The kernel (and the macros) assume a fixed size and a tightly packed buffer.
-        if (depth.get_width() != DEPTH_WIDTH || depth.get_height() != DEPTH_HEIGHT)
+        rs2::frameset frames;
+        if (!pipe.try_wait_for_frames(&frames, 1000))
         {
-            throw std::runtime_error("Depth frame is " + std::to_string(depth.get_width()) + "x" +
-                                     std::to_string(depth.get_height()) +
-                                     " but DEPTH_WIDTH/DEPTH_HEIGHT are " + std::to_string(DEPTH_WIDTH) +
-                                     "x" + std::to_string(DEPTH_HEIGHT));
+            std::cerr << "No depth frame within 1000 ms\n";
+            return false;
         }
-        if (depth.get_stride_in_bytes() != DEPTH_WIDTH * static_cast<int>(sizeof(uint16_t)))
-        {
-            throw std::runtime_error("Depth frame rows are not tightly packed");
+        rs2::frameset newer;
+        while (pipe.poll_for_frames(&newer)){
+            frames = newer;
         }
- 
-        const rs2_intrinsics intrinsics = depth.get_profile().as<rs2::video_stream_profile>().get_intrinsics();
- 
-        // deproject_cpu assumes no lens distortion. Warn once if the camera reports any.
-        static bool distortionChecked = false;
-        if (!distortionChecked)
+        if(!frames)
         {
-            for (float c : intrinsics.coeffs)
-            {
-                if (std::fabs(c) > 1e-9f)
-                {
-                    std::cerr << "Warning: depth intrinsics have non-zero distortion coefficients; "
-                                 "deproject_cpu ignores distortion.\n";
-                    break;
-                }
-            }
-            distortionChecked = true;
+            return false;
         }
 
-        params.fx = intrinsics.fx;
-        params.fy = intrinsics.fy;
-        params.ppx = intrinsics.ppx;
-        params.ppy = intrinsics.ppy;
-        params.depth_units = depth.get_units();
- 
-        const uint16_t *raw_depth = reinterpret_cast<const uint16_t *>(depth.get_data());
- 
-#ifdef DEPTH_TIMING
-        const auto t0 = std::chrono::steady_clock::now();
-#endif
-        deproject_cpu(raw_depth, params,
-                      matrices.coordX,
-                      matrices.coordY,
-                      matrices.heights,
-                      matrices.valid);
-#ifdef DEPTH_TIMING
-        const auto t1 = std::chrono::steady_clock::now();
-        std::cout << "deproject_cpu: "
-                  << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms\n";
-#endif
-        auto end = std::chrono::steady_clock::now();
-        elapsed_time = std::chrono::duration<double, std::milli>(end - start).count();
+        rs2::depth_frame depth = frames.get_depth_frame();
+        rs2::motion_frame accel = frames.first_or_default(RS2_STREAM_ACCEL);
+        rs2::motion_frame gyro = frames.first_or_default(RS2_STREAM_GYRO);
+        if(depth){
+            depth = decimation.process(depth);
+            std::cout << "Depth width: " << depth.get_width() << " and height: " << depth.get_height() << std::endl;
+            // The kernel (and the macros) assume a fixed size and a tightly packed buffer.
+            if (depth.get_width() != DEPTH_WIDTH || depth.get_height() != DEPTH_HEIGHT)
+            {
+                throw std::runtime_error("Depth frame is " + std::to_string(depth.get_width()) + "x" +
+                                        std::to_string(depth.get_height()) +
+                                        " but DEPTH_WIDTH/DEPTH_HEIGHT are " + std::to_string(DEPTH_WIDTH) +
+                                        "x" + std::to_string(DEPTH_HEIGHT));
+            }
+            if (depth.get_stride_in_bytes() != DEPTH_WIDTH * static_cast<int>(sizeof(uint16_t)))
+            {
+                throw std::runtime_error("Depth frame rows are not tightly packed");
+            }
+
+            const rs2_intrinsics intrinsics = depth.get_profile().as<rs2::video_stream_profile>().get_intrinsics();
+
+            // deproject_cpu assumes no lens distortion. Warn once if the camera reports any.
+            static bool distortionChecked = false;
+            if (!distortionChecked)
+            {
+                for (float c : intrinsics.coeffs)
+                {
+                    if (std::fabs(c) > 1e-9f)
+                    {
+                        std::cerr << "Warning: depth intrinsics have non-zero distortion coefficients; "
+                                    "deproject_cpu ignores distortion.\n";
+                        break;
+                    }
+                }
+                distortionChecked = true;
+            }
+
+            params.fx = intrinsics.fx;
+            params.fy = intrinsics.fy;
+            params.ppx = intrinsics.ppx;
+            params.ppy = intrinsics.ppy;
+            params.depth_units = depth.get_units();
+
+            const uint16_t *raw_depth = reinterpret_cast<const uint16_t *>(depth.get_data());
+
+            #ifdef DEPTH_TIMING
+            const auto t0 = std::chrono::steady_clock::now();
+            #endif
+            deproject_cpu(raw_depth, params,
+                        matrices.coordX,
+                        matrices.coordY,
+                        matrices.heights,
+                        matrices.valid, motion);
+            #ifdef DEPTH_TIMING
+            const auto t1 = std::chrono::steady_clock::now();
+            std::cout << "deproject_cpu: "
+                    << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms\n";
+            #endif
+        }
+        if(accel){
+            const rs2_vector accel_data = accel.as<rs2::motion_frame>().get_motion_data();
+            motion.accel_x = accel_data.x;
+            motion.accel_y = accel_data.y;
+            motion.accel_z = accel_data.z;
+            std::cout << "Accel: x=" << accel_data.x << " y=" << accel_data.y << " z=" << accel_data.z << std::endl;
+            std::cout << "Pitch about x-axis: " << motion.get_pitch_abt_x_axis() << " degrees" << std::endl;
+            std::cout << "Roll about y-axis: " << motion.get_roll_abt_y_axis() << " degrees" << std::endl;
+            Vertex gravity_vec = motion.get_gravity_vector();
+            std::cout << "Gravity vector: (" << gravity_vec.x << ", "
+                      << gravity_vec.y << ", "
+                      << gravity_vec.z << ")" << std::endl;
+        }
+        if(gyro){
+            const rs2_vector gyro_data = gyro.as<rs2::motion_frame>().get_motion_data();
+            motion.gyro_x = gyro_data.x;
+            motion.gyro_y = gyro_data.y;
+            motion.gyro_z = gyro_data.z;
+            std::cout << "Gyro: x=" << gyro_data.x << " y=" << gyro_data.y << " z=" << gyro_data.z << std::endl;
+        }
+
+        elapsed_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         return true;
     }
     catch (const rs2::error &e)

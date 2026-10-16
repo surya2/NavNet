@@ -1,5 +1,6 @@
 #pragma once
 #include "common/types.h"
+#include "common/mathematics.h"
 #include <netinet/in.h>
 #include <string>
 

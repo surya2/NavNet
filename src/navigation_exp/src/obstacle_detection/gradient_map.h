@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <vector>
 #include "common/types.h"
+#include "common/mathematics.h"
 #include "obstacle_detection/obstacle_clustering_tree.h"
 
 #ifndef GRADIENT_MAX_THREADS
