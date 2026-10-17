@@ -191,8 +191,8 @@ void deproject_cpu(const uint16_t *depth, const DeprojParams &p, float *out_x, f
 
             Vertex rotated_point = rotation_matrix * Vertex(px, py, pz);
             out_x[i] = rotated_point.x;
-            out_y[i] = rotated_point.y;
-            out_z[i] = rotated_point.z;
+            out_y[i] = rotated_point.z;
+            out_z[i] = -rotated_point.y;
             // out_x[i] = px;
             // out_y[i] = py * p.cos_a - pz * p.sin_a;
             // out_z[i] = py * p.sin_a + pz * p.cos_a;
