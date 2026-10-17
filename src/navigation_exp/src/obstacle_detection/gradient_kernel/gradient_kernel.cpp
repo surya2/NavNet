@@ -38,58 +38,51 @@ static Pixel invalid_pixel()
     return p;
 }
 
-// ---------------------------------------------------------------------------
-// d(height)/d(coordinate) along one line of 2K+1 pixels (the centre is line[K]).
-// Same rules as the CPU: central difference if a valid neighbour exists on both
-// sides, one-sided if only one side has one, 0 if neither. The only change is that
-// the search is limited to K pixels per side.
-// USE_X selects which coordinate is the denominator (x for a row, y for a column).
-// ---------------------------------------------------------------------------
+// component for partial in either X or Y direction (row or column from a center pixel/point).
+// ofc we are looking at the height (2nd index of Pixel) which is in the line[] for the value of the point to get the gradient
 template <bool USE_X>
 static float partial_along(const Pixel line[WIN])
 {
 #pragma HLS INLINE
-    const Pixel centre = line[GRAD_K];
+    const Pixel center = line[GRAD_K];
 
-    bool hasPlus = false;
-    bool hasMinus = false;
-    Pixel plus = centre;
-    Pixel minus = centre;
+    bool hasIncNeighbor = false;
+    bool hasDecNeighbor = false;
+    Pixel plus = center;
+    Pixel minus = center;
 
-    // Fixed trip count (K) -> unrolled into a small priority selector.
-    // Nearest valid neighbour wins because d = 1 is checked first.
     for (int d = 1; d <= GRAD_K; ++d)
     {
 #pragma HLS UNROLL
-        if (!hasPlus && line[GRAD_K + d].valid)
+        if (!hasIncNeighbor && line[GRAD_K + d].valid)
         {
-            hasPlus = true;
+            hasIncNeighbor = true;
             plus = line[GRAD_K + d];
         }
-        if (!hasMinus && line[GRAD_K - d].valid)
+        if (!hasDecNeighbor && line[GRAD_K - d].valid)
         {
-            hasMinus = true;
+            hasDecNeighbor = true;
             minus = line[GRAD_K - d];
         }
     }
 
-    Pixel a = centre;
-    Pixel b = centre;
+    Pixel a = center;
+    Pixel b = center;
     bool ok = true;
-    if (hasPlus && hasMinus)
+    if (hasIncNeighbor && hasDecNeighbor)
     {
         a = plus;
         b = minus;
     }
-    else if (hasPlus)
+    else if (hasIncNeighbor)
     {
         a = plus;
-        b = centre;
+        b = center;
     }
-    else if (hasMinus)
+    else if (hasDecNeighbor)
     {
         a = minus;
-        b = centre;
+        b = center;
     }
     else
     {
@@ -97,16 +90,15 @@ static float partial_along(const Pixel line[WIN])
     }
 
     const float dc = USE_X ? (a.x - b.x) : (a.y - b.y);
-    // The divider always runs (hardware has no "skip"); we just ignore its result when !ok.
     const float slope = (a.h - b.h) / dc;
     return (ok && dc != 0.0f) ? slope : 0.0f;
 }
 
 // Gradient magnitude of the pixel in the middle of the window.
-static float gradient_from_window(const Pixel win[WIN][WIN])
+static float gradient_using_window(const Pixel win[WIN][WIN])
 {
 #pragma HLS INLINE
-    const Pixel centre = win[GRAD_K][GRAD_K];
+    const Pixel center = win[GRAD_K][GRAD_K];
 
     // The vertical line is a column of the window, copy it so it can be passed as an array.
     Pixel vLine[WIN];
@@ -122,13 +114,10 @@ static float gradient_from_window(const Pixel win[WIN][WIN])
     const float dzdy = partial_along<false>(vLine);
     const float g = hls::sqrt(dzdx * dzdx + dzdy * dzdy);
 
-    return centre.valid ? g : 0.0f;
+    return center.valid ? g : 0.0f;
 }
 
-// ---------------------------------------------------------------------------
-// Stage 1: read the four input arrays sequentially, one pixel per clock.
-// Simple sequential accesses in a pipelined loop let the tool generate long AXI bursts.
-// ---------------------------------------------------------------------------
+// 1: Read each of the 4 arrays from DMA sequentially into the bitstream of Pixels
 static void load_pixels(const float *heights,
                         const float *coordX,
                         const float *coordY,
@@ -151,8 +140,8 @@ static void load_pixels(const float *heights,
 // Stage 2: line buffers + sliding window.
 //
 // Pixels arrive in raster order. When the pixel at (r, c) arrives, the window holds the
-// (2K+1)x(2K+1) block whose bottom-right corner is (r, c), so its CENTRE is the pixel
-// (r-K, c-K). That centre is the one we can compute a full gradient for, which is why the
+// (2K+1)x(2K+1) block whose bottom-right corner is (r, c), so its center is the pixel
+// (r-K, c-K). That center is the one we can compute a full gradient for, which is why the
 // loop runs K extra rows and K extra columns ("flush") with invalid pixels fed in.
 // Out-of-image neighbours are simply invalid pixels, so borders need no special code.
 // ---------------------------------------------------------------------------
@@ -234,7 +223,7 @@ static void compute_gradients(hls::stream<Pixel> &in, hls::stream<float> &out)
             window[i][WIN - 1] = colVec[i];
         }
 
-        // The window centre is now the pixel (r-K, c-K); emit its gradient once both are >= 0.
+        // The window center is now the pixel (r-K, c-K); emit its gradient once both are >= 0.
         if (r >= GRAD_K && c >= GRAD_K)
         {
             out.write(gradient_from_window(window));
