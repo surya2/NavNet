@@ -40,7 +40,7 @@ class ParallelGradientCalculator
 {
 public:
     static void calculateGradientsParallel(
-        const Matrices &m,
+        Matrices &m,
         xrt::kernel gradient_kernel,
         std::vector<Vertex> &obstacleVertices,
         ObstacleClusteringTree &obstacleTree);

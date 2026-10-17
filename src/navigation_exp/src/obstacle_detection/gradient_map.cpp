@@ -232,7 +232,7 @@ void ParallelGradientCalculator::detectObstacles(
 
 
 void ParallelGradientCalculator::calculateGradientsParallel(
-    const Matrices &m,
+    Matrices &m,
     xrt::kernel gradient_kernel,
     std::vector<Vertex> &obstacleVertices,
     ObstacleClusteringTree &obstacleTree)
@@ -259,14 +259,14 @@ void ParallelGradientCalculator::calculateGradientsParallel(
       continue;
     }
     const double h = m.heights[i];
-    const double g = gradients[i];
+    const double g = m.gradients[i];
     total.count += 1;
     total.sum_heights += h;
     total.sum_heights_squared += h * h;
     total.sum_gradients += g;
     total.sum_gradients_squared += g * g;
   }
-  detectObstacles(m, gradients, total, obstacleVertices, obstacleTree);
+  detectObstacles(m, m.gradients, total, obstacleVertices, obstacleTree);
   elapsed_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
   #ifdef GRADIENT_TIMING
   std::cout << "Obstacle determination elapsed time in ms: " << elapsed_time << std::endl;

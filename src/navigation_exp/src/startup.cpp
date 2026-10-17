@@ -17,27 +17,6 @@
 volatile std::sig_atomic_t halt = 0;
 static Matrices matrices;
 
-xrt::device device(0);
-auto uuid = device.load_xclbin("gradient.xclbin");
-xrt::kernel gradient_krn(device, uuid, "gradient_kernel");
-
-xrt::bo boHeights(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(0));
-xrt::bo boX(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(1));
-xrt::bo boY(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(2));
-xrt::bo boValid(device, DEPTH_PIXELS * sizeof(uint8_t), gradient_krn.group_id(3));
-xrt::bo boGradients(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(4));
-
-matrices.boHeights = boHeights;
-matrices.boX = boX;
-matrices.boY = boY;
-matrices.boValid = boValid;
-matrices.boGradients = boGradients;
-matrices.heights = boHeights.map<float *>();
-matrices.coordX = boX.map<float *>();
-matrices.coordY = boY.map<float *>();
-matrices.valid = boValid.map<uint8_t *>();
-matrices.gradients = boGradients.map<float *>();
-
 void signal_handler(int signal)
 {
     if (signal == SIGINT)
@@ -49,6 +28,21 @@ void signal_handler(int signal)
 int main(int argc, char **argv)
 {
     std::signal(SIGINT, signal_handler);
+
+    xrt::device device(0);
+    auto uuid = device.load_xclbin("/lib/firmware/xilinx/<app>/gradient.xclbin");
+    xrt::kernel gradient_krn(device, uuid, "gradient_kernel");
+    matrices.boHeights = xrt::bo(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(0));
+    matrices.boX = xrt::bo(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(1));
+    matrices.boY = xrt::bo(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(2));
+    matrices.boValid = xrt::bo(device, DEPTH_PIXELS * sizeof(uint8_t),gradient_krn.group_id(3));
+    matrices.boGradients = xrt::bo(device, DEPTH_PIXELS * sizeof(float),gradient_krn.group_id(4));
+    matrices.heights = matrices.boHeights.map<float *>();
+    matrices.coordX = matrices.boX.map<float *>();
+    matrices.coordY = matrices.boY.map<float *>();
+    matrices.valid= matrices.boValid.map<uint8_t *>();
+    matrices.gradients = matrices.boGradients.map<float *>();
+
     static FrameSender sender(argc > 1 ? argv[1] : "255.255.255.255");
     auto start = std::chrono::steady_clock::now();
     rs2::pipeline pipe;
@@ -83,7 +77,7 @@ int main(int argc, char **argv)
         std::vector<Vertex> obstacleVertices;
         ObstacleClusteringTree obstacleTree(2);
         auto obstacles_start = std::chrono::steady_clock::now();
-        ParallelGradientCalculator::calculateGradientsParallel(matrices, GRADIENT_THREADS, obstacleVertices, obstacleTree);
+        ParallelGradientCalculator::calculateGradientsParallel(matrices, gradient_krn, obstacleVertices, obstacleTree);
         double obstacles_elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - obstacles_start).count();
         std::cout << "Obstacles elapsed time in ms: " << obstacles_elapsed << std::endl;
 
