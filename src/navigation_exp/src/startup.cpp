@@ -1,3 +1,7 @@
+#include <xrt/xrt_device.h>
+#include <xrt/xrt_kernel.h>
+#include <xrt/xrt_bo.h>
+
 #include "capture/realsense_capture.h"
 #include "obstacle_detection/gradient_map.h"
 #include "path_planning/local_path_planner_graph.h"
@@ -12,6 +16,27 @@
 
 volatile std::sig_atomic_t halt = 0;
 static Matrices matrices;
+
+xrt::device device(0);
+auto uuid = device.load_xclbin("gradient.xclbin");
+xrt::kernel gradient_krn(device, uuid, "gradient_kernel");
+
+xrt::bo boHeights(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(0));
+xrt::bo boX(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(1));
+xrt::bo boY(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(2));
+xrt::bo boValid(device, DEPTH_PIXELS * sizeof(uint8_t), gradient_krn.group_id(3));
+xrt::bo boGradients(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(4));
+
+matrices.boHeights = boHeights;
+matrices.boX = boX;
+matrices.boY = boY;
+matrices.boValid = boValid;
+matrices.boGradients = boGradients;
+matrices.heights = boHeights.map<float *>();
+matrices.coordX = boX.map<float *>();
+matrices.coordY = boY.map<float *>();
+matrices.valid = boValid.map<uint8_t *>();
+matrices.gradients = boGradients.map<float *>();
 
 void signal_handler(int signal)
 {
@@ -61,7 +86,7 @@ int main(int argc, char **argv)
         ParallelGradientCalculator::calculateGradientsParallel(matrices, GRADIENT_THREADS, obstacleVertices, obstacleTree);
         double obstacles_elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - obstacles_start).count();
         std::cout << "Obstacles elapsed time in ms: " << obstacles_elapsed << std::endl;
-        
+
         std::pair<int, int> startIndices = {DEPTH_HEIGHT - 1, DEPTH_WIDTH / 2};
         const int startIndex = Matrices::idx(startIndices.second, startIndices.first);
         Vertex start(matrices.coordX[startIndex], matrices.coordY[startIndex], 0);

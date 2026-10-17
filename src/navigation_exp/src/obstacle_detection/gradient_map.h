@@ -39,9 +39,9 @@ float magnitude(float x, float y);
 class ParallelGradientCalculator
 {
 public:
-    static const float *calculateGradientsParallel(
+    static void calculateGradientsParallel(
         const Matrices &m,
-        int numThreads,
+        xrt::kernel gradient_kernel,
         std::vector<Vertex> &obstacleVertices,
         ObstacleClusteringTree &obstacleTree);
 

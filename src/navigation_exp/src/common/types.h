@@ -1,4 +1,8 @@
 #pragma once
+#include <xrt/xrt_device.h>
+#include <xrt/xrt_kernel.h>
+#include <xrt/xrt_bo.h>
+
 #include <fstream>
 #include <iostream>
 #include <vector>
@@ -16,15 +20,35 @@
 #endif
 #define DEPTH_PIXELS (DEPTH_WIDTH * DEPTH_HEIGHT)
 
+// struct Matrices
+// {
+//     static constexpr int width = DEPTH_WIDTH;
+//     static constexpr int height = DEPTH_HEIGHT;
+
+//     float heights[DEPTH_PIXELS] = {};
+//     float coordX[DEPTH_PIXELS] = {};
+//     float coordY[DEPTH_PIXELS] = {};
+//     uint8_t valid[DEPTH_PIXELS] = {};
+
+//     static constexpr int idx(int x, int y) { return y * DEPTH_WIDTH + x; }
+// };
+
 struct Matrices
 {
     static constexpr int width = DEPTH_WIDTH;
     static constexpr int height = DEPTH_HEIGHT;
 
-    float heights[DEPTH_PIXELS] = {};
-    float coordX[DEPTH_PIXELS] = {};
-    float coordY[DEPTH_PIXELS] = {};
-    uint8_t valid[DEPTH_PIXELS] = {};
+    xrt::bo boHeights;
+    xrt::bo boX;
+    xrt::bo boY;
+    xrt::bo boValid;
+    xrt::bo boGradients;
+
+    float *heights;
+    float *coordX;
+    float *coordY;
+    uint8_t *valid;
+    float *gradients;
 
     static constexpr int idx(int x, int y) { return y * DEPTH_WIDTH + x; }
 };
