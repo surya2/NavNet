@@ -12,7 +12,7 @@
 #define GRADIENT_MAX_THREADS 16
 #endif
 
-#define GRADIENT_TIMING
+// #define GRADIENT_TIMING
 
 struct Stats
 {
@@ -46,8 +46,6 @@ public:
         ObstacleClusteringTree &obstacleTree);
 
 private:
-    // Raw-pointer compute functions: no std::vector, no heap, no shared_ptr.
-    // These are the pieces that can later be turned into FPGA kernels.
     static void computeGradientRows(
         const float *heights,
         const float *coordX,

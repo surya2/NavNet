@@ -9,6 +9,7 @@
 #include <csignal>
 #include <chrono>
 
+// #define STARTUP_DEBUG
 #define DECIMATION_KERNEL_SIZE 4
 #define GRADIENT_THREADS 3
 #define GOAL_X 0.0f
@@ -62,7 +63,9 @@ int main(int argc, char **argv)
         if (!pipe.try_wait_for_frames(&fs, 1000)) break;
     }
     double warmup_elapsed_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    #ifdef STARTUP_DEBUG
     std::cout << "Warmup elapsed time in ms: " << warmup_elapsed_time << std::endl;
+    #endif
 
     Motion motion;
     while (!halt)
@@ -73,13 +76,17 @@ int main(int argc, char **argv)
         {
             continue;
         }
+        #ifdef STARTUP_DEBUG
         std::cout << "Capture elapsed time in ms: " << capture_elapsed << std::endl;
+        #endif
         std::vector<Vertex> obstacleVertices;
         ObstacleClusteringTree obstacleTree(2);
         auto obstacles_start = std::chrono::steady_clock::now();
         ParallelGradientCalculator::calculateGradientsParallel(matrices, gradient_krn, obstacleVertices, obstacleTree);
-        double obstacles_elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - obstacles_start).count();
+        double obstacles_elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - obstacles_start).count();    
+        #ifdef STARTUP_DEBUG
         std::cout << "Obstacles elapsed time in ms: " << obstacles_elapsed << std::endl;
+        #endif
 
         std::pair<int, int> startIndices = {DEPTH_HEIGHT - 1, DEPTH_WIDTH / 2};
         const int startIndex = Matrices::idx(startIndices.second, startIndices.first);

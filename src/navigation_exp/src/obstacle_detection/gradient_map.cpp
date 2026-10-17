@@ -269,6 +269,7 @@ void ParallelGradientCalculator::calculateGradientsParallel(
   detectObstacles(m, m.gradients, total, obstacleVertices, obstacleTree);
   elapsed_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
   #ifdef GRADIENT_TIMING
+  std::cout << "Obstacle vertices count: " << obstacleVertices.size() << std::endl;
   std::cout << "Obstacle determination elapsed time in ms: " << elapsed_time << std::endl;
   #endif
 }

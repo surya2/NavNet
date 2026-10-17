@@ -8,6 +8,8 @@
 #include "common/mathematics.h"
 #include "obstacle_detection/obstacle_clustering_tree.h"
 
+// #define PATH_PLANNER_DEBUG
+
 struct PathPoint
 {
     std::pair<int, int> indices;

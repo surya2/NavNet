@@ -135,5 +135,7 @@ void FrameSender::sendList(PacketType type)
         header.payloadSize = size;
         transmit(header, packet);
     }
+    #ifdef FRAME_SENDER_DEBUG
     std::cout << "Total bytes of payload sent: " << totalSize << std::endl;
+    #endif
 }
