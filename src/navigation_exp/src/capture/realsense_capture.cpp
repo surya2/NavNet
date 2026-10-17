@@ -152,8 +152,11 @@ void processColorFrame(rs2::frame &color)
 void deproject_cpu(const uint16_t *depth, const DeprojParams &p, float *out_x, float *out_y,
         float *out_z,
         uint8_t *out_valid,
-        Motion &motion)
+        Motion &motion,
+        const Vehicle &vehicle)
 {
+    const float cos_yaw = std::cos(vehicle.orientation.yaw_abt_z_axis);
+    const float sin_yaw = std::sin(vehicle.orientation.yaw_abt_z_axis);
     auto start = std::chrono::steady_clock::now();
     Vertex ref_gravity_vector = Vertex(0, -1, 0);;
     Vertex gravity_vector = motion.get_gravity_vector();
@@ -190,8 +193,8 @@ void deproject_cpu(const uint16_t *depth, const DeprojParams &p, float *out_x, f
             const float pz = d;
 
             Vertex rotated_point = rotation_matrix * Vertex(px, py, pz);
-            out_x[i] = rotated_point.x;
-            out_y[i] = rotated_point.z;
+            out_x[i] = vehicle.orientation.x + rotated_point.x * cos_yaw + rotated_point.z * sin_yaw;
+            out_y[i] = vehicle.orientation.y - rotated_point.x * sin_yaw + rotated_point.z * cos_yaw;
             out_z[i] = -rotated_point.y;
             // out_x[i] = px;
             // out_y[i] = py * p.cos_a - pz * p.sin_a;
@@ -205,8 +208,8 @@ void deproject_cpu(const uint16_t *depth, const DeprojParams &p, float *out_x, f
 }
 
 bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pipeline &pipe, 
-    double &elapsed_time,
-    Motion &motion)
+    double &elapsed_time, Motion &motion,Vehicle &vehicle,
+    std::chrono::time_point<std::chrono::steady_clock> control_time)
 {
     try
     {
@@ -281,11 +284,7 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
             #ifdef DEPTH_TIMING
             const auto t0 = std::chrono::steady_clock::now();
             #endif
-            deproject_cpu(raw_depth, params,
-                        matrices.coordX,
-                        matrices.coordY,
-                        matrices.heights,
-                        matrices.valid, motion);
+            deproject_cpu(raw_depth, params, matrices.coordX, matrices.coordY, matrices.heights, matrices.valid, motion, vehicle);
             #ifdef DEPTH_TIMING
             const auto t1 = std::chrono::steady_clock::now();
             std::cout << "deproject_cpu: "
@@ -304,6 +303,8 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
             std::cout << "Gravity vector: (" << gravity_vec.x << ", "
                       << gravity_vec.y << ", "
                       << gravity_vec.z << ")" << std::endl;
+            vehicle.orientation.update_position(control_time, motion);
+            vehicle.update_vehicle_intrinsics();
         }
         if(gyro){
             const rs2_vector gyro_data = gyro.as<rs2::motion_frame>().get_motion_data();
@@ -311,7 +312,10 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
             motion.gyro_y = gyro_data.y;
             motion.gyro_z = gyro_data.z;
             std::cout << "Gyro: x=" << gyro_data.x << " y=" << gyro_data.y << " z=" << gyro_data.z << std::endl;
+            vehicle.orientation.update_orientation(control_time, motion);
+            vehicle.update_vehicle_intrinsics();
         }
+        vehicle.orientation.posted_control_time = control_time;
 
         elapsed_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
         return true;

@@ -23,8 +23,9 @@ bool runMatrixCollector(Matrices &matrices, std::vector<Vertex> &vertices, int d
     std::cout << "Warmup elapsed time in ms: " << warmup_elapsed_time << std::endl;
 
     Motion motion;
+    Vehicle vehicle;
     double captureElapsed;
-    if (!capture_depth_matrix(matrices, decimationKernelSize, pipe, captureElapsed, motion)){
+    if (!capture_depth_matrix(matrices, decimationKernelSize, pipe, captureElapsed, motion, vehicle, std::chrono::steady_clock::now())){
         return false;
     }
     for (int i = 0; i < DEPTH_PIXELS; i++){
