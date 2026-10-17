@@ -277,11 +277,11 @@ extern "C"
                          float *gradients)
     {
         // Each array gets its own AXI master (bundle) so all four can be read in parallel.
-#pragma HLS INTERFACE mode = m_axi port = heights bundle = gmem0 offset = slave
-#pragma HLS INTERFACE mode = m_axi port = coordX bundle = gmem1 offset = slave
-#pragma HLS INTERFACE mode = m_axi port = coordY bundle = gmem2 offset = slave
-#pragma HLS INTERFACE mode = m_axi port = valid bundle = gmem3 offset = slave
-#pragma HLS INTERFACE mode = m_axi port = gradients bundle = gmem4 offset = slave
+#pragma HLS INTERFACE mode = m_axi port = heights bundle = gmem0 offset = slave depth = DEPTH_PIXELS
+#pragma HLS INTERFACE mode = m_axi port = coordX bundle = gmem1 offset = slave depth = DEPTH_PIXELS
+#pragma HLS INTERFACE mode = m_axi port = coordY bundle = gmem2 offset = slave depth = DEPTH_PIXELS
+#pragma HLS INTERFACE mode = m_axi port = valid bundle = gmem3 offset = slave depth = DEPTH_PIXELS
+#pragma HLS INTERFACE mode = m_axi port = gradients bundle = gmem4 offset = slave depth = DEPTH_PIXELS
         // Buffer addresses and the start/done handshake are controlled from the CPU via registers.
 #pragma HLS INTERFACE mode = s_axilite port = heights bundle = control
 #pragma HLS INTERFACE mode = s_axilite port = coordX bundle = control
