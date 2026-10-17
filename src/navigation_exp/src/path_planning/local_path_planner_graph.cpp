@@ -218,6 +218,7 @@ bool AStarPathPlanner::isDestination(PathPoint *current)
 }
 
 std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
+                                               const float *gradients,
                                                Vertex &start,
                                                std::pair<int, int> &startIndices)
 {
@@ -232,6 +233,7 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
 
     constexpr float INVALID_POINT_PENALTY = 5.0f;       // Penalty for invalid points
     constexpr float OBSTACLE_PROXIMITY_PENALTY = 10.0f; // Penalty for being near obstacles
+    constexpr float GRADIENT_COST_WEIGHT = 1.0f;
 
     // VisualizationSocket vizSocket;
 
@@ -361,6 +363,7 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
                 {
                     localCost += 1.0f;
                 }
+                localCost += GRADIENT_COST_WEIGHT * std::abs(gradients[neighborIndex]);
                 float newCost = localCost + moveCost;
                 PathPoint *neighbor = costArray[neighborIndex];
                 if (!neighbor)

@@ -158,14 +158,13 @@ void ParallelGradientCalculator::computeGradientRows(
   }
 }
 
-const float *ParallelGradientCalculator::calculateGradientsParallel(
+void ParallelGradientCalculator::calculateGradientsParallel(
     const Matrices &m,
     int numThreads,
     std::vector<Vertex> &obstacleVertices,
-    ObstacleClusteringTree &obstacleTree)
+    ObstacleClusteringTree &obstacleTree,
+    float* gradients)
 {
-  static float gradients[DEPTH_PIXELS];
-
   numThreads = std::clamp(numThreads, 1, GRADIENT_MAX_THREADS);
   const int rowsPerThread = (DEPTH_HEIGHT + numThreads - 1) / numThreads;
 
@@ -214,7 +213,7 @@ const float *ParallelGradientCalculator::calculateGradientsParallel(
   }
   if (total.count == 0)
   {
-    return gradients;
+    return;
   }
 
   Stats globalStats{};
@@ -273,6 +272,4 @@ const float *ParallelGradientCalculator::calculateGradientsParallel(
       scanRow(rowDown);
     }
   }
-
-  return gradients;
 }

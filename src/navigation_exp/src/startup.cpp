@@ -58,7 +58,9 @@ int main(int argc, char **argv)
         std::vector<Vertex> obstacleVertices;
         ObstacleClusteringTree obstacleTree(2);
         auto obstacles_start = std::chrono::steady_clock::now();
-        ParallelGradientCalculator::calculateGradientsParallel(matrices, GRADIENT_THREADS, obstacleVertices, obstacleTree);
+
+        static float gradients[DEPTH_PIXELS];
+        ParallelGradientCalculator::calculateGradientsParallel(matrices, GRADIENT_THREADS, obstacleVertices, obstacleTree, gradients);
         double obstacles_elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - obstacles_start).count();
         std::cout << "Obstacles elapsed time in ms: " << obstacles_elapsed << std::endl;
         
@@ -67,7 +69,7 @@ int main(int argc, char **argv)
         Vertex start(matrices.coordX[startIndex], matrices.coordY[startIndex], 0);
         AStarPathPlanner planner(obstacleTree, Vertex(GOAL_X, GOAL_Y, 0));
         auto path_start = std::chrono::steady_clock::now();
-        std::vector<Vertex> path = planner.planPath(matrices, start, startIndices);
+        std::vector<Vertex> path = planner.planPath(matrices, gradients, start, startIndices);
         auto end = std::chrono::steady_clock::now();
         double path_elapsed = std::chrono::duration<double, std::milli>(end - path_start).count();
         double elapsed = std::chrono::duration<double, std::milli>(end - frame_start).count();

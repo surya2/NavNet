@@ -39,11 +39,12 @@ float magnitude(float x, float y);
 class ParallelGradientCalculator
 {
 public:
-    static const float *calculateGradientsParallel(
+    static void calculateGradientsParallel(
         const Matrices &m,
         int numThreads,
         std::vector<Vertex> &obstacleVertices,
-        ObstacleClusteringTree &obstacleTree);
+        ObstacleClusteringTree &obstacleTree,
+        float *gradients);
 
 private:
     // Raw-pointer compute functions: no std::vector, no heap, no shared_ptr.
