@@ -69,6 +69,13 @@ private:
         const float *coordY,
         const uint8_t *valid,
         int row, int col);
+    
+    static void detectObstacles(
+        const Matrices &m,
+        const float *gradients,
+        const GradientPartialSums &total,
+        std::vector<Vertex> &obstacleVertices,
+        ObstacleClusteringTree &obstacleTree);
 };
 
 #endif

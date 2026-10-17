@@ -206,7 +206,7 @@ void ParallelGradientCalculator::detectObstacles(
  
       if (isGlobalOutlier || isGradientOutlier)
       {
-        const Vertex partOfObstacle(m.coordX[i], m.coordY[i], m.heights[i]);
+        Vertex partOfObstacle(m.coordX[i], m.coordY[i], m.heights[i]);
         obstacleVertices.push_back(partOfObstacle);
         obstacleTree.add(partOfObstacle);
       }

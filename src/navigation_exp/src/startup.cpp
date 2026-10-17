@@ -30,7 +30,7 @@ int main(int argc, char **argv)
     std::signal(SIGINT, signal_handler);
 
     xrt::device device(0);
-    auto uuid = device.load_xclbin("/lib/firmware/xilinx/<app>/gradient.xclbin");
+    auto uuid = device.load_xclbin("/lib/firmware/xilinx/gradient_accel/binary_container_1.xclbin");
     xrt::kernel gradient_krn(device, uuid, "gradient_kernel");
     matrices.boHeights = xrt::bo(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(0));
     matrices.boX = xrt::bo(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(1));
