@@ -77,6 +77,7 @@ export default function App() {
       return info.get(id);
     };
     let shownId = null;
+    let lastStats = null;
     let dirty = false;
     const assembler = new FrameAssembler((type, frame) => {
       latest[type] = frame;
@@ -94,6 +95,7 @@ export default function App() {
         if (!packet) return;
         if (packet.type === STATS) {
           entry(packet.frameId).stats = packet.stats;
+          lastStats = packet.stats;
           dirty = true;
         } else {
           assembler.push(packet);
@@ -115,7 +117,8 @@ export default function App() {
         latest[type] = null;
       }
       if (dirty && shownId !== null) {
-        const { counts, stats } = info.get(shownId);
+        const { counts } = info.get(shownId);
+        const stats = info.get(shownId).stats ?? lastStats;
         const pts = (i) => (counts[i] === null ? '-' : counts[i]);
         const ms = (i) => (stats ? stats[i].toFixed(1) : '-');
         statusRef.current.textContent = [

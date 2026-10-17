@@ -33,18 +33,18 @@ int main(int argc, char **argv)
     xrt::device device(0);
     auto uuid = device.load_xclbin("/lib/firmware/xilinx/gradient_accel/binary_container_1.xclbin");
     xrt::kernel gradient_krn(device, uuid, "gradient_kernel");
-    matrices.boHeights = xrt::bo(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(0));
-    matrices.boX = xrt::bo(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(1));
-    matrices.boY = xrt::bo(device, DEPTH_PIXELS * sizeof(float), gradient_krn.group_id(2));
-    matrices.boValid = xrt::bo(device, DEPTH_PIXELS * sizeof(uint8_t),gradient_krn.group_id(3));
-    matrices.boGradients = xrt::bo(device, DEPTH_PIXELS * sizeof(float),gradient_krn.group_id(4));
+    matrices.boHeights = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(0));
+    matrices.boX = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(1));
+    matrices.boY = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(2));
+    matrices.boValid = xrt::bo(device, DEPTH_PIXELS * sizeof(uint8_t), xrt::bo::flags::cacheable, gradient_krn.group_id(3));
+    matrices.boGradients = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(4));
     matrices.heights = matrices.boHeights.map<float *>();
     matrices.coordX = matrices.boX.map<float *>();
     matrices.coordY = matrices.boY.map<float *>();
     matrices.valid= matrices.boValid.map<uint8_t *>();
     matrices.gradients = matrices.boGradients.map<float *>();
 
-    static FrameSender sender(argc > 1 ? argv[1] : "255.255.255.255");
+    static FrameSender sender("10.0.0.14");
     auto start = std::chrono::steady_clock::now();
     rs2::pipeline pipe;
     rs2::config cfg;
