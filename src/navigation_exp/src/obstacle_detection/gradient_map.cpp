@@ -165,8 +165,7 @@ void ParallelGradientCalculator::detectObstacles(
     const float *gradients,
     const GradientPartialSums &total,
     std::vector<Vertex> &obstacleVertices,
-    ObstacleClusteringTree &obstacleTree,
-    float* gradients)
+    ObstacleClusteringTree &obstacleTree)
 {
   if (total.count == 0)
   {

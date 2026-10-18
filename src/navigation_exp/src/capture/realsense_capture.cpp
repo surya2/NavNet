@@ -299,7 +299,9 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
                         matrices.coordX,
                         matrices.coordY,
                         matrices.heights,
-                        matrices.valid, motion);
+                        matrices.valid, 
+                        motion,
+                        vehicle);
             #ifdef DEPTH_DEBUG
             const auto t1 = std::chrono::steady_clock::now();
             std::cout << "deproject_cpu elapsed time: "

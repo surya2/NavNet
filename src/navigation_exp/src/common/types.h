@@ -20,19 +20,6 @@
 #endif
 #define DEPTH_PIXELS (DEPTH_WIDTH * DEPTH_HEIGHT)
 
-// struct Matrices
-// {
-//     static constexpr int width = DEPTH_WIDTH;
-//     static constexpr int height = DEPTH_HEIGHT;
-
-//     float heights[DEPTH_PIXELS] = {};
-//     float coordX[DEPTH_PIXELS] = {};
-//     float coordY[DEPTH_PIXELS] = {};
-//     uint8_t valid[DEPTH_PIXELS] = {};
-
-//     static constexpr int idx(int x, int y) { return y * DEPTH_WIDTH + x; }
-// };
-
 struct Matrices
 {
     static constexpr int width = DEPTH_WIDTH;
