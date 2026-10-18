@@ -129,6 +129,33 @@ ObstacleNode *ObstacleClusteringTree::findNearestObstacle(ObstacleNode &subject,
     return best;
 }
 
+void ObstacleClusteringTree::findWithinRadius(Vertex &center, float radius, std::vector<Vertex> &out)
+{
+    ObstacleNode ob(center);
+    this->findWithinRadius(ob, this->root, 0, radius, out);
+}
+
+void ObstacleClusteringTree::findWithinRadius(ObstacleNode &subject, ObstacleNode *node, int depth, float radius, std::vector<Vertex> &out)
+{
+    if (node == nullptr)
+    {
+        return;
+    }
+    if (this->distanceSquared(subject, node) <= radius * radius)
+    {
+        out.push_back(node->getVertex());
+    }
+    const float diff = subject.get(depth) - node->get(depth);
+    if (diff < radius)
+    {
+        this->findWithinRadius(subject, node->getLeft(), depth + 1, radius, out);
+    }
+    if (diff >= -radius)
+    {
+        this->findWithinRadius(subject, node->getRight(), depth + 1, radius, out);
+    }
+}
+
 double ObstacleClusteringTree::distanceSquared(ObstacleNode &subject, ObstacleNode *node)
 {
     double total = 0;

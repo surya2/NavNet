@@ -98,9 +98,55 @@ std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current, const Matr
     return path;
 }
 
+std::vector<Vertex> AStarPathPlanner::mergePath(const std::vector<Vertex> &previous, std::vector<Vertex> &path, float x, float y)
+{
+    if (path.empty())
+    {
+        return previous;
+    }
+    size_t closest = previous.size();
+    float best = INFINITY;
+    for (size_t i = 0; i < previous.size(); i++)
+    {
+        const float d = (previous[i].x - x) * (previous[i].x - x) + (previous[i].y - y) * (previous[i].y - y);
+        if (d < best)
+        {
+            best = d;
+            closest = i;
+        }
+    }
+    if (closest < previous.size())
+    {
+        path.insert(path.end(), previous.begin() + closest + 1, previous.end());
+    }
+    return path;
+}
+
 bool AStarPathPlanner::isDestination(PathPoint *current)
 {
     return fabs(current->x - goal.x) <= 0.1 && fabs(current->y - goal.y) <= 0.1;
+}
+
+bool AStarPathPlanner::footprintCollides(float x, float y, float headingX, float headingY)
+{
+    constexpr float SIDE_CLEARANCE = 0.1f;
+    const float halfLength = length / 2 + SIDE_CLEARANCE;
+    const float halfSide = halfWidth + SIDE_CLEARANCE;
+    Vertex center(x - headingX * length / 2, y - headingY * length / 2, 0);
+    nearbyObstacles.clear();
+    obstacleTree.findWithinRadius(center, std::sqrt(halfLength * halfLength + halfSide * halfSide), nearbyObstacles);
+    for (const Vertex &o : nearbyObstacles)
+    {
+        const float dx = o.x - center.x;
+        const float dy = o.y - center.y;
+        const float forward = dx * headingX + dy * headingY;
+        const float right = dx * headingY - dy * headingX;
+        if (std::fabs(forward) <= halfLength && std::fabs(right) <= halfSide)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
@@ -120,6 +166,7 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
 
     constexpr float INVALID_POINT_PENALTY = 5.0f;       // Penalty for invalid points
     constexpr float OBSTACLE_PROXIMITY_PENALTY = 10.0f; // Penalty for being near obstacles
+    constexpr float GRADIENT_COST_WEIGHT = 1.0f;
 
     for (auto &point : costArray)
     {
@@ -163,8 +210,12 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
 
     std::unordered_map<int, bool> closedSet;
 
+    constexpr int MAX_PLAN_ITERATIONS = 5000;
+    PathPoint *bestNode = startNode;
+    float bestH = hValue(startNode->x, startNode->y);
+
     int iterations = 0;
-    while (!openSet.empty())
+    while (!openSet.empty() && iterations < MAX_PLAN_ITERATIONS)
     {
         iterations++;
 
@@ -178,6 +229,12 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
             std::cout << "Error: Null current point at index " << currentIndex << std::endl;
             #endif
             continue;
+        }
+
+        if (m.valid[currentIndex] && hValue(current->x, current->y) < bestH)
+        {
+            bestH = hValue(current->x, current->y);
+            bestNode = current;
         }
 
         if (isDestination(current))
@@ -235,16 +292,20 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
                     moveCost += INVALID_POINT_PENALTY;
                 }
 
-                Vertex v(nextX, nextY, 0);
-                auto obstacle = obstacleTree.findNearestObstacle(v);
-                if (obstacle)
+                if (nextValid)
                 {
-                    float obstacle_dist = static_cast<float>(sqrt(
-                        pow(obstacle->getVertex().x - nextX, 2) +
-                        pow(obstacle->getVertex().y - nextY, 2)));
-                    if (obstacle_dist < 0.2)
+                    const bool currentValid = m.valid[current->indices.first * cols + current->indices.second];
+                    float headingX = currentValid ? nextX - current->x : goal.x - nextX;
+                    float headingY = currentValid ? nextY - current->y : goal.y - nextY;
+                    const float headingLength = std::hypot(headingX, headingY);
+                    if (headingLength > 1e-6f)
                     {
-                        continue;
+                        headingX /= headingLength;
+                        headingY /= headingLength;
+                        if (footprintCollides(nextX, nextY, headingX, headingY))
+                        {
+                            continue;
+                        }
                     }
                 }
 
@@ -257,6 +318,7 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
                 {
                     localCost += 1.0f;
                 }
+                localCost += GRADIENT_COST_WEIGHT * std::abs(m.gradients[neighborIndex]);
                 float newCost = localCost + moveCost;
                 PathPoint *neighbor = costArray[neighborIndex];
                 if (!neighbor)
@@ -294,11 +356,15 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
             }
         }
     }
-
+    std::vector<Vertex> partial;
+    if (bestNode != startNode)
+    {
+        partial = retracePath(bestNode, m);
+    }
     for (auto &point : costArray)
     {
         delete point;
         point = nullptr;
     }
-    return std::vector<Vertex>();
+    return partial;
 }

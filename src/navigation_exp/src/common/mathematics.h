@@ -245,32 +245,6 @@ Matrix<W, H> operator*(float s, const Matrix<W, H> &m)
     return m * s;
 }
 
-struct Kinematics {
-    float x, y, z;
-    float roll_abt_x_axis, pitch_abt_x_axis, yaw_abt_y_axis;
-    float vel_x, vel_y, vel_z;
-
-    Kinematics() : x(0), y(0), z(0), roll_abt_x_axis(0), pitch_abt_x_axis(0), yaw_abt_y_axis(0), vel_x(0), vel_y(0), vel_z(0) {}
-
-    void update_position(float delta_time) {
-        x += vel_x * delta_time;
-        y += vel_y * delta_time;
-        z += vel_z * delta_time;
-    }
-
-    void update_orientation(float delta_time, float roll_rate, float pitch_rate, float yaw_rate) {
-        roll_abt_x_axis += roll_rate * delta_time;
-        pitch_abt_x_axis += pitch_rate * delta_time;
-        yaw_abt_y_axis += yaw_rate * delta_time;
-    }
-
-    void update_velocity(float accel_x, float accel_y, float accel_z, float delta_time) {
-        vel_x += accel_x * delta_time;
-        vel_y += accel_y * delta_time;
-        vel_z += accel_z * delta_time;
-    }
-};
-
 struct Motion {
     float accel_x, accel_y, accel_z;
     float gyro_x, gyro_y, gyro_z;
@@ -291,3 +265,10 @@ struct Motion {
         return std::atan2(accel_y, accel_z) * (180.0f / M_PI);
     }
 };
+
+inline float rad_to_deg(float rad){
+    return (rad*180)/M_PI;
+}
+inline float deg_to_rad(float deg){
+    return (deg*M_PI)/180;
+}

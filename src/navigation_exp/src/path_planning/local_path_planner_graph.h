@@ -6,6 +6,7 @@
 #include <utility>
 #include "common/types.h"
 #include "common/mathematics.h"
+#include "common/vehicle.h"
 #include "obstacle_detection/obstacle_clustering_tree.h"
 
 // #define PATH_PLANNER_DEBUG
@@ -26,10 +27,13 @@ private:
     ObstacleClusteringTree &obstacleTree;
     PathPoint *costArray[DEPTH_PIXELS] = {};
     Vertex goal;
+    float halfWidth;
+    float length;
+    std::vector<Vertex> nearbyObstacles;
 
 public:
-    AStarPathPlanner(ObstacleClusteringTree &tree, Vertex&& goal)
-        : obstacleTree(tree), goal(goal) {}
+    AStarPathPlanner(ObstacleClusteringTree &tree, Vertex&& goal, const Vehicle &vehicle)
+        : obstacleTree(tree), goal(goal), halfWidth(vehicle.width / 2), length(vehicle.height) {}
     AStarPathPlanner(const AStarPathPlanner &) = delete;
     AStarPathPlanner &operator=(const AStarPathPlanner &) = delete;
     ~AStarPathPlanner()
@@ -44,8 +48,12 @@ public:
 
     std::vector<Vertex> planPath(const Matrices &m, Vertex &start, std::pair<int, int> &startIndices);
 
+    static std::vector<Vertex> mergePath(const std::vector<Vertex> &previous, std::vector<Vertex> &path, float x, float y);
+
     float hValue(float x, float y);
 
     bool isDestination(PathPoint *current);
+
+    bool footprintCollides(float x, float y, float headingX, float headingY);
 };
 #endif

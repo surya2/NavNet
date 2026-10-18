@@ -59,11 +59,13 @@ private:
     static float calculatePartialX(
         const float *heights,
         const float *coordX,
+        const float *coordY,
         const uint8_t *valid,
         int row, int col);
 
     static float calculatePartialY(
         const float *heights,
+        const float *coordX,
         const float *coordY,
         const uint8_t *valid,
         int row, int col);

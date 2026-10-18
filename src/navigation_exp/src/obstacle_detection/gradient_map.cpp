@@ -17,6 +17,7 @@ float magnitude(float x, float y){
 float ParallelGradientCalculator::calculatePartialX(
     const float *heights,
     const float *coordX,
+    const float *coordY,
     const uint8_t *valid,
     int row, int col)
 {
@@ -60,7 +61,7 @@ float ParallelGradientCalculator::calculatePartialX(
     return 0.0f;
   }
 
-  const float dx = coordX[a]- coordX[b];
+  const float dx = std::hypot(coordX[a] - coordX[b], coordY[a] - coordY[b]);
   if (dx == 0.0f)
   {
     return 0.0f;
@@ -70,6 +71,7 @@ float ParallelGradientCalculator::calculatePartialX(
 
 float ParallelGradientCalculator::calculatePartialY(
     const float *heights,
+    const float *coordX,
     const float *coordY,
     const uint8_t *valid,
     int row, int col)
@@ -113,7 +115,7 @@ float ParallelGradientCalculator::calculatePartialY(
     return 0.0f;
   }
 
-  const float dy = coordY[a] - coordY[b];
+  const float dy = std::hypot(coordX[a] - coordX[b], coordY[a] - coordY[b]);
   if (dy == 0.0f)
   {
     return 0.0f;
@@ -143,8 +145,8 @@ void ParallelGradientCalculator::computeGradientRows(
         continue;
       }
 
-      const float dzdx = calculatePartialX(heights, coordX, valid, row, col);
-      const float dzdy = calculatePartialY(heights, coordY, valid, row, col);
+      const float dzdx = calculatePartialX(heights, coordX, coordY, valid, row, col);
+      const float dzdy = calculatePartialY(heights, coordX, coordY, valid, row, col);
       const float g = magnitude(dzdx, dzdy);
       gradients[i] = g;
 
@@ -163,7 +165,8 @@ void ParallelGradientCalculator::detectObstacles(
     const float *gradients,
     const GradientPartialSums &total,
     std::vector<Vertex> &obstacleVertices,
-    ObstacleClusteringTree &obstacleTree)
+    ObstacleClusteringTree &obstacleTree,
+    float* gradients)
 {
   if (total.count == 0)
   {

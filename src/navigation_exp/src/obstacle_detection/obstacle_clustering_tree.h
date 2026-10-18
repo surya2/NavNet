@@ -1,6 +1,7 @@
 #ifndef OBSTACLECLUSTERING_H
 #define OBSTACLECLUSTERING_H
 
+#include <vector>
 #include "common/types.h"
 #include "common/mathematics.h"
 
@@ -65,6 +66,10 @@ public:
     ObstacleNode *findNearestObstacle(Vertex &subject);
 
     ObstacleNode *findNearestObstacle(ObstacleNode &subject, ObstacleNode *node, int depth);
+
+    void findWithinRadius(Vertex &center, float radius, std::vector<Vertex> &out);
+
+    void findWithinRadius(ObstacleNode &subject, ObstacleNode *node, int depth, float radius, std::vector<Vertex> &out);
 
     double distanceSquared(ObstacleNode &subject, ObstacleNode *node);
 
