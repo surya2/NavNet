@@ -67,8 +67,19 @@ void FrameSender::send(const Matrices &m, const std::vector<Vertex> &obstacles, 
         }
     sendList(POINT_CLOUD);
 
+    const auto now = std::chrono::steady_clock::now();
+    const bool sendPath = now - lastPathSent >= PATH_SEND_INTERVAL;
+    if (sendPath)
+    {
+        lastPathSent = now;
+    }
+
     for (auto [type, list] : {std::make_pair(OBSTACLES, &obstacles), std::make_pair(PATH, &path)})
     {
+        if (type == PATH && !sendPath)
+        {
+            continue;
+        }
         pointCount = std::min(static_cast<int>(list->size()), DEPTH_PIXELS);
         for (int i = 0; i < pointCount; i++)
         {

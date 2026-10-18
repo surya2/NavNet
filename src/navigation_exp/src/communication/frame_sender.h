@@ -2,6 +2,7 @@
 #include "common/types.h"
 #include "common/mathematics.h"
 #include <netinet/in.h>
+#include <chrono>
 #include <string>
 
 // #define FRAME_SENDER_DEBUG
@@ -31,6 +32,7 @@ struct PacketHeader
 static_assert(sizeof(PacketHeader) == 38, "PacketHeader must be packed");
 
 constexpr int CHUNK_POINTS = 200;
+constexpr std::chrono::milliseconds PATH_SEND_INTERVAL(500);
 
 class FrameSender
 {
@@ -39,6 +41,7 @@ class FrameSender
     uint8_t frameId = 0;
     float points[DEPTH_PIXELS * 3];
     int pointCount = 0;
+    std::chrono::steady_clock::time_point lastPathSent{};
 
     void sendList(PacketType type);
     void transmit(PacketHeader &header, uint8_t *packet);
