@@ -150,7 +150,6 @@ bool AStarPathPlanner::footprintCollides(float x, float y, float headingX, float
 }
 
 std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
-                                               const float *gradients,
                                                Vertex &start,
                                                std::pair<int, int> &startIndices)
 {
@@ -319,7 +318,7 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
                 {
                     localCost += 1.0f;
                 }
-                localCost += GRADIENT_COST_WEIGHT * std::abs(gradients[neighborIndex]);
+                localCost += GRADIENT_COST_WEIGHT * std::abs(m.gradients[neighborIndex]);
                 float newCost = localCost + moveCost;
                 PathPoint *neighbor = costArray[neighborIndex];
                 if (!neighbor)

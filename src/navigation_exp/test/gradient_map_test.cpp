@@ -7,7 +7,6 @@
 #include "obstacle_detection/obstacle_clustering_tree.h"
 
 static Matrices matrices;
-static float gradients[DEPTH_PIXELS];
 
 int main()
 {

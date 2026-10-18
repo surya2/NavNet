@@ -7,7 +7,6 @@
 #include <cassert>
 
 static Matrices matrices;
-static float gradients[DEPTH_PIXELS];
 
 int main()
 {

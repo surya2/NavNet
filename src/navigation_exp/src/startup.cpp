@@ -174,7 +174,7 @@ int main(int argc, char **argv)
         Vertex start(matrices.coordX[startIndex], matrices.coordY[startIndex], 0);
         AStarPathPlanner planner(obstacleTree, Vertex(vehicle_state.destination.x, vehicle_state.destination.y, 0), vehicle_state);
         auto path_start = std::chrono::steady_clock::now();
-        std::vector<Vertex> path = planner.planPath(matrices, matrices.gradients, start, startIndices);
+        std::vector<Vertex> path = planner.planPath(matrices, start, startIndices);
         // fullPath = AStarPathPlanner::mergePath(fullPath, path, vehicle_state.orientation.x, vehicle_state.orientation.y);
         auto end = std::chrono::steady_clock::now();
         double path_elapsed = std::chrono::duration<double, std::milli>(end - path_start).count();

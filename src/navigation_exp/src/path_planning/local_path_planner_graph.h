@@ -46,7 +46,7 @@ public:
 
     std::vector<Vertex> retracePath(PathPoint *current, const Matrices &m);
 
-    std::vector<Vertex> planPath(const Matrices &m, const float *gradients, Vertex &start, std::pair<int, int> &startIndices);
+    std::vector<Vertex> planPath(const Matrices &m, Vertex &start, std::pair<int, int> &startIndices);
 
     static std::vector<Vertex> mergePath(const std::vector<Vertex> &previous, std::vector<Vertex> &path, float x, float y);
 
