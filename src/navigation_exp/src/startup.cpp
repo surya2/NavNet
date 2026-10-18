@@ -16,7 +16,7 @@ volatile std::sig_atomic_t halt = 0;
 static Matrices matrices;
 static Motion motion;
 static Vehicle vehicle_state;
-static std::vector<Vertex> fullPath;
+// static std::vector<Vertex> fullPath;
 
 
 void signal_handler(int signal)
@@ -151,11 +151,12 @@ int main(int argc, char **argv)
         AStarPathPlanner planner(obstacleTree, Vertex(vehicle_state.destination.x, vehicle_state.destination.y, 0), vehicle_state);
         auto path_start = std::chrono::steady_clock::now();
         std::vector<Vertex> path = planner.planPath(matrices, gradients, start, startIndices);
-        fullPath = AStarPathPlanner::mergePath(fullPath, path, vehicle_state.orientation.x, vehicle_state.orientation.y);
+        // fullPath = AStarPathPlanner::mergePath(fullPath, path, vehicle_state.orientation.x, vehicle_state.orientation.y);
         auto end = std::chrono::steady_clock::now();
         double path_elapsed = std::chrono::duration<double, std::milli>(end - path_start).count();
         double elapsed = std::chrono::duration<double, std::milli>(end - frame_start).count();
-        sender.send(matrices, obstacleVertices, fullPath,elapsed, capture_elapsed, obstacles_elapsed, path_elapsed);
+        // sender.send(matrices, obstacleVertices, fullPath,elapsed, capture_elapsed, obstacles_elapsed, path_elapsed);
+        sender.send(matrices, obstacleVertices, path, elapsed, capture_elapsed, obstacles_elapsed, path_elapsed);
     }
     pipe.stop();
     return 0;

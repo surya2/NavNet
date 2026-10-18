@@ -193,8 +193,10 @@ void deproject_cpu(const uint16_t *depth, const DeprojParams &p, float *out_x, f
             const float pz = d;
 
             Vertex rotated_point = rotation_matrix * Vertex(px, py, pz);
-            out_x[i] = vehicle.orientation.x + rotated_point.x * cos_yaw + rotated_point.z * sin_yaw;
-            out_y[i] = vehicle.orientation.y - rotated_point.x * sin_yaw + rotated_point.z * cos_yaw;
+            // out_x[i] = vehicle.orientation.x + rotated_point.x * cos_yaw + rotated_point.z * sin_yaw;
+            // out_y[i] = vehicle.orientation.y - rotated_point.x * sin_yaw + rotated_point.z * cos_yaw;
+            out_x[i] = rotated_point.x * cos_yaw + rotated_point.z * sin_yaw;
+            out_y[i] = -rotated_point.x * sin_yaw + rotated_point.z * cos_yaw;
             out_z[i] = -rotated_point.y;
             // out_x[i] = px;
             // out_y[i] = py * p.cos_a - pz * p.sin_a;
