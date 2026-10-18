@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 project(navigation)
 
-set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE Release)
 
 # For GCC/Clang
 if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)

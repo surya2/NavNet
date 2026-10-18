@@ -43,7 +43,7 @@ int main(int argc, char **argv)
     // parse vehicle config first
     std::ifstream file("config/vehicle.conf");
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open the file!" << std::endl;
+        std::cerr << "Error: Could not open the config file!" << std::endl;
         return 1;
     }
     std::string line;
