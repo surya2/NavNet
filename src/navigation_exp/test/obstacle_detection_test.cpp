@@ -7,6 +7,7 @@
 #include <cassert>
 
 static Matrices matrices;
+static float gradients[DEPTH_PIXELS];
 
 int main()
 {
@@ -15,7 +16,7 @@ int main()
         return 1;
     std::vector<Vertex> obstacleVertices;
     ObstacleClusteringTree obstacleTree(2);
-    const float *gradients = ParallelGradientCalculator::calculateGradientsParallel(matrices, 3, obstacleVertices, obstacleTree);
+    ParallelGradientCalculator::calculateGradientsParallel(matrices, 3, obstacleVertices, obstacleTree, gradients);
     std::vector<Vertex> gradientVertices;
     for (int i = 0; i < DEPTH_PIXELS; i++)
     {
