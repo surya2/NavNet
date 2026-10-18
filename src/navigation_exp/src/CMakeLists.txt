@@ -60,6 +60,8 @@ target_link_libraries(communication PUBLIC ${LZ4_LIBRARY})
 add_executable(navigation startup.cpp)
 target_link_libraries(navigation PRIVATE capture obstacle_detection path_planning communication)
 
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/../config/vehicle.conf ${CMAKE_BINARY_DIR}/config/vehicle.conf COPYONLY)
+
 add_executable(captureTest ../test/capture_test.cpp)
 target_link_libraries(captureTest PRIVATE capture)
 
