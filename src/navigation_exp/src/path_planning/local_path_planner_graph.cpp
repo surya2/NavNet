@@ -129,7 +129,7 @@ bool AStarPathPlanner::isDestination(PathPoint *current)
 
 bool AStarPathPlanner::footprintCollides(float x, float y, float headingX, float headingY)
 {
-    constexpr float SIDE_CLEARANCE = 0.1f;
+    constexpr float SIDE_CLEARANCE = 0.5f;
     const float halfLength = length / 2 + SIDE_CLEARANCE;
     const float halfSide = halfWidth + SIDE_CLEARANCE;
     Vertex center(x - headingX * length / 2, y - headingY * length / 2, 0);
@@ -166,7 +166,7 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
 
     constexpr float INVALID_POINT_PENALTY = 5.0f;       // Penalty for invalid points
     constexpr float OBSTACLE_PROXIMITY_PENALTY = 10.0f; // Penalty for being near obstacles
-    constexpr float GRADIENT_COST_WEIGHT = 1.0f;
+    constexpr float GRADIENT_COST_WEIGHT = 5.0f;
 
     for (auto &point : costArray)
     {
