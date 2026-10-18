@@ -158,65 +158,18 @@ void ParallelGradientCalculator::computeGradientRows(
   }
 }
 
-const float *ParallelGradientCalculator::calculateGradientsParallel(
+void ParallelGradientCalculator::detectObstacles(
     const Matrices &m,
-    int numThreads,
+    const float *gradients,
+    const GradientPartialSums &total,
     std::vector<Vertex> &obstacleVertices,
     ObstacleClusteringTree &obstacleTree)
 {
-  static float gradients[DEPTH_PIXELS];
-
-  numThreads = std::clamp(numThreads, 1, GRADIENT_MAX_THREADS);
-  const int rowsPerThread = (DEPTH_HEIGHT + numThreads - 1) / numThreads;
-
-#ifdef GRADIENT_TIMING
-  const auto t0 = std::chrono::steady_clock::now();
-#endif
-
-  // Stage 1 Parallel: gradients + partial sums, each thread owns a block of rows
-  GradientPartialSums partial[GRADIENT_MAX_THREADS];
-  std::thread threads[GRADIENT_MAX_THREADS];
-  int started = 0;
-
-  for (int t = 0; t < numThreads; ++t)
-  {
-    const int rowBegin = t * rowsPerThread;
-    const int rowEnd = std::min(DEPTH_HEIGHT, rowBegin + rowsPerThread);
-    if (rowBegin >= rowEnd)
-    {
-      break;
-    }
-    threads[t] = std::thread(computeGradientRows,
-                             m.heights, m.coordX, m.coordY, m.valid,
-                             gradients, rowBegin, rowEnd, std::ref(partial[t]));
-    started++;
-  }
-  for (int t = 0; t < started; t++)
-  {
-    threads[t].join();
-  }
-
-#ifdef GRADIENT_TIMING
-  const auto t1 = std::chrono::steady_clock::now();
-  std::cout << "Time taken to calculate gradients: "
-            << std::chrono::duration<double>(t1 - t0).count() << "s" << std::endl;
-#endif
-
-  // Stage 2 combine partial sums and compute global mean/stddev to find outliers
-  GradientPartialSums total;
-  for (int t = 0; t < started; ++t)
-  {
-    total.count += partial[t].count;
-    total.sum_heights += partial[t].sum_heights;
-    total.sum_heights_squared += partial[t].sum_heights_squared;
-    total.sum_gradients += partial[t].sum_gradients;
-    total.sum_gradients_squared += partial[t].sum_gradients_squared;
-  }
   if (total.count == 0)
   {
-    return gradients;
+    return; // no valid pixels, nothing to detect
   }
-
+ 
   Stats globalStats{};
   const double n = static_cast<double>(total.count);
   const double mean_height = total.sum_heights / n;
@@ -226,29 +179,31 @@ const float *ParallelGradientCalculator::calculateGradientsParallel(
   globalStats.gradMean = static_cast<float>(mean_gradient);
   globalStats.stdDev = static_cast<float>(std::sqrt(std::max(0.0, total.sum_heights_squared / n - mean_height * mean_height)));
   globalStats.gradStdDev = static_cast<float>(std::sqrt(std::max(0.0, total.sum_gradients_squared / n - mean_gradient * mean_gradient)));
-
+ 
 #ifdef GRADIENT_TIMING
   std::cout << "Global mean: " << globalStats.mean << std::endl;
   std::cout << "Global std dev: " << globalStats.stdDev << std::endl;
   std::cout << "Global gradient mean: " << globalStats.gradMean << std::endl;
   std::cout << "Global gradient std dev: " << globalStats.gradStdDev << std::endl;
 #endif
-
-  // Lastly go through each point and check if outlier and if so add to obstacleVertices (just to keep in flat array) and obstacleTree
+ 
+  // Serial on purpose: ObstacleClusteringTree::add() is not assumed to be thread-safe.
   auto scanRow = [&](int row)
   {
     const int base = row * DEPTH_WIDTH;
-    for (int col = 0; col < DEPTH_WIDTH; col++)
+    for (int col = 0; col < DEPTH_WIDTH; ++col)
     {
-      const int i = base+col;
+      const int i = base + col;
       if (!m.valid[i])
       {
         continue;
       }
-
-      const bool isGlobalOutlier = std::fabs(m.heights[i]-globalStats.mean) > HEIGHT_OUTLIER_SIGMAS*globalStats.stdDev;
-      const bool isGradientOutlier = std::fabs(gradients[i]-globalStats.gradMean) > GRADIENT_OUTLIER_SIGMAS*globalStats.gradStdDev;
-
+ 
+      const bool isGlobalOutlier =
+          std::fabs(m.heights[i] - globalStats.mean) > HEIGHT_OUTLIER_SIGMAS * globalStats.stdDev;
+      const bool isGradientOutlier =
+          std::fabs(gradients[i] - globalStats.gradMean) > GRADIENT_OUTLIER_SIGMAS * globalStats.gradStdDev;
+ 
       if (isGlobalOutlier || isGradientOutlier)
       {
         Vertex partOfObstacle(m.coordX[i], m.coordY[i], m.heights[i]);
@@ -257,10 +212,10 @@ const float *ParallelGradientCalculator::calculateGradientsParallel(
       }
     }
   };
-
-  const int centerRow = DEPTH_HEIGHT/2;
-  const int maxOffset = std::max(centerRow, (DEPTH_HEIGHT-1)-centerRow);
-  for (int offset = 0; offset <= maxOffset; offset++)
+ 
+  const int centerRow = DEPTH_HEIGHT / 2;
+  const int maxOffset = std::max(centerRow, DEPTH_HEIGHT - 1 - centerRow);
+  for (int offset = 0; offset <= maxOffset; ++offset)
   {
     const int rowUp = centerRow - offset;
     const int rowDown = centerRow + offset;
@@ -273,6 +228,48 @@ const float *ParallelGradientCalculator::calculateGradientsParallel(
       scanRow(rowDown);
     }
   }
+}
 
-  return gradients;
+
+void ParallelGradientCalculator::calculateGradientsParallel(
+    Matrices &m,
+    xrt::kernel gradient_kernel,
+    std::vector<Vertex> &obstacleVertices,
+    ObstacleClusteringTree &obstacleTree)
+{
+  auto start = std::chrono::steady_clock::now();
+  m.boHeights.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+  m.boX.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+  m.boY.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+  m.boValid.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+  auto run = gradient_kernel(m.boHeights, m.boX, m.boY, m.boValid, m.boGradients);
+  run.wait();
+  m.boGradients.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+  double elapsed_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+  #ifdef GRADIENT_TIMING
+  std::cout << "Gradient kernel elapsed time in ms: " << elapsed_time << std::endl;
+  #endif
+
+  start = std::chrono::steady_clock::now();
+  GradientPartialSums total;
+  for (int i = 0; i < DEPTH_PIXELS; ++i)
+  {
+    if (!m.valid[i])
+    {
+      continue;
+    }
+    const double h = m.heights[i];
+    const double g = m.gradients[i];
+    total.count += 1;
+    total.sum_heights += h;
+    total.sum_heights_squared += h * h;
+    total.sum_gradients += g;
+    total.sum_gradients_squared += g * g;
+  }
+  detectObstacles(m, m.gradients, total, obstacleVertices, obstacleTree);
+  elapsed_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+  #ifdef GRADIENT_TIMING
+  std::cout << "Obstacle vertices count: " << obstacleVertices.size() << std::endl;
+  std::cout << "Obstacle determination elapsed time in ms: " << elapsed_time << std::endl;
+  #endif
 }

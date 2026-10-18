@@ -44,106 +44,6 @@ struct Twist
     Twist(float lin = 0.0f, float ang = 0.0f) : linear(lin), angular(ang) {}
 };
 
-// class VisualizationSocket
-// {
-// private:
-//     socket_t sockfd;
-//     struct sockaddr_in serv_addr;
-//     bool connected;
-
-// public:
-//     VisualizationSocket(const std::string &ip = "127.0.0.1", int port = 12345) : connected(false)
-//     {
-//         WSADATA wsaData;
-//         if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
-//         {
-//             std::cerr << "WSAStartup failed" << std::endl;
-//             return;
-//         }
-//         // Create socket
-//         sockfd = socket(AF_INET, SOCK_STREAM, 0);
-//         if (sockfd < 0)
-//         {
-//             std::cerr << "ERROR opening socket" << std::endl;
-//             return;
-//         }
-
-//         // Set up server address
-//         memset(&serv_addr, 0, sizeof(serv_addr));
-//         serv_addr.sin_family = AF_INET;
-//         serv_addr.sin_port = htons(port);
-
-//         if (inet_pton(AF_INET, ip.c_str(), &serv_addr.sin_addr) <= 0)
-//         {
-//             std::cerr << "Invalid address or address not supported" << std::endl;
-//             close(sockfd);
-//             return;
-//         }
-
-//         if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
-//         {
-//             std::cerr << "Connection Failed. Python visualization server might not be running." << std::endl;
-//             close(sockfd);
-//             return;
-//         }
-
-//         connected = true;
-//         std::cout << "Connected to visualization server" << std::endl;
-//     }
-
-//     ~VisualizationSocket()
-//     {
-//         if (connected)
-//         {
-//             sendMessage("TERMINATE");
-//             close(sockfd);
-//         }
-//     }
-
-//     void sendMessage(const std::string &message)
-//     {
-//         if (!connected)
-//             return;
-
-//         send(sockfd, message.c_str(), message.length(), 0);
-//     }
-
-//     void sendExploredPoint(float currentX, float currentY, float parentX, float parentY)
-//     {
-//         if (!connected)
-//             return;
-
-//         std::stringstream ss;
-//         ss << "EXPLORE," << currentX << "," << currentY << "," << parentX << "," << parentY;
-//         sendMessage(ss.str());
-//     }
-
-//     void sendTwist(float linVelocity, float angVelocity, int order)
-//     {
-//         if (!connected)
-//             return;
-
-//         std::stringstream ss;
-//         ss << "TWIST," << linVelocity << "," << angVelocity << "," << order;
-//         sendMessage(ss.str());
-//     }
-
-//     void sendPathPoint(float x, float y)
-//     {
-//         if (!connected)
-//             return;
-
-//         std::stringstream ss;
-//         ss << "PATH," << x << "," << y;
-//         sendMessage(ss.str());
-//     }
-
-//     bool isConnected() const
-//     {
-//         return connected;
-//     }
-// };
-
 float AStarPathPlanner::hValue(float x, float y)
 {
     return static_cast<float>(sqrt(pow(x - goal.x, 2) + pow(y - goal.y, 2)));
@@ -160,7 +60,6 @@ struct CompareCoordinate
 std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current, const Matrices &m)
 {
     std::vector<Twist> twists;
-    //VisualizationSocket vizSocket;
     std::vector<Vertex> path;
     PathPoint *prev = nullptr;
     float prev_heading = 0.0f;
@@ -169,12 +68,10 @@ std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current, const Matr
         path.push_back(Vertex(current->x, current->y, m.heights[Matrices::idx(current->indices.second, current->indices.first)]));
         if (prev != nullptr)
         {
-            // Calculate heading to current point
             float dx = current->x - prev->x;
             float dy = current->y - prev->y;
             float target_heading = atan2(dy, dx);
 
-            // Calculate angular difference (need to handle wrap-around)
             float angular_diff = target_heading - prev_heading;
             float angular_delta = static_cast<float>(2 * M_PI);
             if (angular_diff > M_PI)
@@ -191,21 +88,10 @@ std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current, const Matr
 
             // Add Twist to the vector
             twists.push_back(Twist(linear_velocity, angular_velocity));
-            // if (vizSocket.isConnected())
-            // {
-            //     vizSocket.sendTwist(linear_velocity, angular_velocity, twists.size());
-            //     usleep(25000); // 25ms delay
-            // }
 
             // Update previous heading for next iteration
             prev_heading = target_heading;
         }
-        // if (vizSocket.isConnected())
-        // {
-        //     vizSocket.sendPathPoint(current->x, current->y);
-        //     // vizSocket.sendTwist(linear_velocity, angular_velocity, twists.size());
-        //     usleep(50000); // 50ms delay
-        // }
         prev = current;
         current = current->parent;
     }
@@ -224,16 +110,16 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
     constexpr int rows = DEPTH_HEIGHT;
     constexpr int cols = DEPTH_WIDTH;
 
-    std::cout << "\n=== Debug Information ===\n";
+    #ifdef PATH_PLANNER_DEBUG
+    std::cout << "\n=== Path Planning Debug Information ===\n";
     std::cout << "Matrix dimensions: " << rows << "x" << cols << std::endl;
     std::cout << "Start indices: (" << startIndices.first << "," << startIndices.second << ")" << std::endl;
     std::cout << "Start coordinates: (" << start.x << "," << start.y << ")" << std::endl;
     std::cout << "Goal coordinates: (" << goal.x << "," << goal.y << ")" << std::endl;
+    #endif
 
     constexpr float INVALID_POINT_PENALTY = 5.0f;       // Penalty for invalid points
     constexpr float OBSTACLE_PROXIMITY_PENALTY = 10.0f; // Penalty for being near obstacles
-
-    // VisualizationSocket vizSocket;
 
     for (auto &point : costArray)
     {
@@ -251,13 +137,17 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
     if (startIndices.first >= rows ||
         startIndices.second >= cols)
     {
+        #ifdef PATH_PLANNER_DEBUG
         std::cout << "Error: Start indices out of bounds!" << std::endl;
+        #endif
         return std::vector<Vertex>();
     }
 
     const bool startValid = m.valid[startIndex];
+    #ifdef PATH_PLANNER_DEBUG
     std::cout << "Start coordinate valid: " << (startValid ? "true" : "false") << std::endl;
     std::cout << "Start coordinate actual position: (" << m.coordX[startIndex] << "," << m.coordY[startIndex] << ")" << std::endl;
+    #endif
 
     float startCost = startValid ? 0.0f : INVALID_POINT_PENALTY;
     PathPoint *startNode = new PathPoint(nullptr,
@@ -284,21 +174,27 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
         PathPoint *current = costArray[currentIndex];
         if (!current)
         {
+            #ifdef PATH_PLANNER_DEBUG
             std::cout << "Error: Null current point at index " << currentIndex << std::endl;
+            #endif
             continue;
         }
 
         if (isDestination(current))
         {
+            #ifdef PATH_PLANNER_DEBUG
             std::cout << "Path found after " << iterations << " iterations!" << std::endl;
+            #endif
             std::vector<Vertex> path = retracePath(current, m);
             for (auto &point : costArray)
             {
                 delete point;
                 point = nullptr;
             }
+            #ifdef PATH_PLANNER_DEBUG
             std::cout << "Final OpenSet size: " << openSet.size() << std::endl;
             std::cout << "path size: " << path.size() << std::endl;
+            #endif
             return path;
         }
 
@@ -378,12 +274,6 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
                     {
                         openSet.push({neighborIndex, newCost});
                     }
-                    // if (vizSocket.isConnected())
-                    // {
-                    //     vizSocket.sendExploredPoint(
-                    //         nextX, nextY,
-                    //         current->x, current->y);
-                    // }
                 }
                 else if (newCost < neighbor->costs.first)
                 {
@@ -400,19 +290,11 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
                     {
                         openSet.push({neighborIndex, newCost});
                     }
-                    // if (vizSocket.isConnected() && oldParent != current)
-                    // {
-                    //     vizSocket.sendExploredPoint(
-                    //         nextX, nextY,
-                    //         current->x, current->y);
-                    // }
                 }
             }
         }
     }
 
-    // std::cout << "No path found after " << iterations << " iterations" << std::endl;
-    // std::cout << "Final OpenSet size: " << openSet.size() << std::endl;
     for (auto &point : costArray)
     {
         delete point;

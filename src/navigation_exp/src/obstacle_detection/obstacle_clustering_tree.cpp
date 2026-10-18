@@ -29,6 +29,17 @@ void ObstacleNode::add(ObstacleNode *node, int depth)
         }
     }
 }
+void ObstacleClusteringTree::add(Vertex &vertex)
+{
+    if (this->root == nullptr)
+    {
+        this->root = new ObstacleNode(vertex);
+    }
+    else
+    {
+        this->root->add(new ObstacleNode(vertex));
+    }
+}
 
 float ObstacleNode::get(int dim)
 {
@@ -60,17 +71,6 @@ int ObstacleNode::size()
     }
 }
 
-void ObstacleClusteringTree::add(Vertex &vertex)
-{
-    if (this->root == nullptr)
-    {
-        this->root = new ObstacleNode(vertex);
-    }
-    else
-    {
-        this->root->add(new ObstacleNode(vertex));
-    }
-}
 ObstacleNode *ObstacleClusteringTree::findNearestObstacle(Vertex &subject)
 {
     ObstacleNode ob(subject);

@@ -19,6 +19,63 @@ function makePoints(scene, size, color, vertexColors) {
 
 const tmpColor = new THREE.Color();
 
+const GRAPH_WIDTH = 320;
+const GRAPH_HEIGHT = 160;
+const GRAPH_HISTORY = 300;
+const GRAPH_SMOOTHING = 10;
+const SERIES = [
+  { name: 'total', index: 0, color: '#000000' },
+  { name: 'capture', index: 1, color: '#1f77b4' },
+  { name: 'obstacles', index: 2, color: '#d62728' },
+  { name: 'path', index: 3, color: '#2ca02c' },
+];
+
+function drawGraph(canvas, history) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.fillRect(0, 0, w, h);
+  if (history.length === 0) return;
+
+  let max = 1;
+  for (const sample of history) for (const v of sample) max = Math.max(max, v);
+  max *= 1.1;
+
+  ctx.strokeStyle = '#cccccc';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 1; i < 4; i++) {
+    const y = (h * i) / 4;
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+  }
+  ctx.stroke();
+
+  ctx.lineWidth = 1.5;
+  for (const { index, color } of SERIES) {
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    history.forEach((sample, i) => {
+      const x = (i / (GRAPH_HISTORY - 1)) * w;
+      const y = h - (sample[index] / max) * h;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  ctx.font = '11px monospace';
+  ctx.fillStyle = '#555555';
+  ctx.fillText(`${max.toFixed(1)} ms`, 4, 12);
+  const latest = history[history.length - 1];
+  SERIES.forEach(({ name, index, color }, i) => {
+    ctx.fillStyle = color;
+    ctx.fillText(`${name.padEnd(9)} ${latest[index].toFixed(1)}`, w - 120, 14 + i * 13);
+  });
+}
+
 function applyFrame(points, frame) {
   const position = points.geometry.attributes.position;
   const color = points.geometry.attributes.color;
@@ -41,6 +98,7 @@ function applyFrame(points, frame) {
 export default function App() {
   const mountRef = useRef(null);
   const statusRef = useRef(null);
+  const graphRef = useRef(null);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -77,6 +135,18 @@ export default function App() {
       return info.get(id);
     };
     let shownId = null;
+    let lastStats = null;
+    const recentStats = [];
+    const graphHistory = [];
+    let graphDirty = false;
+    const recordStats = (stats) => {
+      recentStats.push(stats);
+      if (recentStats.length > GRAPH_SMOOTHING) recentStats.shift();
+      const mean = [0, 1, 2, 3].map((i) => recentStats.reduce((sum, s) => sum + s[i], 0) / recentStats.length);
+      graphHistory.push(mean);
+      if (graphHistory.length > GRAPH_HISTORY) graphHistory.shift();
+      graphDirty = true;
+    };
     let dirty = false;
     const assembler = new FrameAssembler((type, frame) => {
       latest[type] = frame;
@@ -94,6 +164,8 @@ export default function App() {
         if (!packet) return;
         if (packet.type === STATS) {
           entry(packet.frameId).stats = packet.stats;
+          lastStats = packet.stats;
+          recordStats(packet.stats);
           dirty = true;
         } else {
           assembler.push(packet);
@@ -115,7 +187,8 @@ export default function App() {
         latest[type] = null;
       }
       if (dirty && shownId !== null) {
-        const { counts, stats } = info.get(shownId);
+        const { counts } = info.get(shownId);
+        const stats = info.get(shownId).stats ?? lastStats;
         const pts = (i) => (counts[i] === null ? '-' : counts[i]);
         const ms = (i) => (stats ? stats[i].toFixed(1) : '-');
         statusRef.current.textContent = [
@@ -130,6 +203,10 @@ export default function App() {
           `path       ${ms(3)} ms`,
         ].join('\n');
         dirty = false;
+      }
+      if (graphDirty) {
+        drawGraph(graphRef.current, graphHistory);
+        graphDirty = false;
       }
       renderer.render(scene, camera);
     };
@@ -159,6 +236,12 @@ export default function App() {
       <pre
         ref={statusRef}
         style={{ position: 'absolute', top: 8, left: 8, margin: 0, padding: 8, font: '13px monospace', background: 'rgba(255,255,255,0.8)' }}
+      />
+      <canvas
+        ref={graphRef}
+        width={GRAPH_WIDTH}
+        height={GRAPH_HEIGHT}
+        style={{ position: 'absolute', top: 8, right: 8 }}
       />
     </div>
   );

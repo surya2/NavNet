@@ -1,3 +1,7 @@
+#include <xrt/xrt_device.h>
+#include <xrt/xrt_kernel.h>
+#include <xrt/xrt_bo.h>
+
 #include "capture/realsense_capture.h"
 #include "obstacle_detection/gradient_map.h"
 #include "path_planning/local_path_planner_graph.h"
@@ -5,6 +9,7 @@
 #include <csignal>
 #include <chrono>
 
+// #define STARTUP_DEBUG
 #define DECIMATION_KERNEL_SIZE 4
 #define GRADIENT_THREADS 3
 #define GOAL_X 0.0f
@@ -24,7 +29,22 @@ void signal_handler(int signal)
 int main(int argc, char **argv)
 {
     std::signal(SIGINT, signal_handler);
-    static FrameSender sender(argc > 1 ? argv[1] : "255.255.255.255");
+
+    xrt::device device(0);
+    auto uuid = device.load_xclbin("/lib/firmware/xilinx/gradient_accel/binary_container_1.xclbin");
+    xrt::kernel gradient_krn(device, uuid, "gradient_kernel");
+    matrices.boHeights = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(0));
+    matrices.boX = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(1));
+    matrices.boY = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(2));
+    matrices.boValid = xrt::bo(device, DEPTH_PIXELS * sizeof(uint8_t), xrt::bo::flags::cacheable, gradient_krn.group_id(3));
+    matrices.boGradients = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(4));
+    matrices.heights = matrices.boHeights.map<float *>();
+    matrices.coordX = matrices.boX.map<float *>();
+    matrices.coordY = matrices.boY.map<float *>();
+    matrices.valid= matrices.boValid.map<uint8_t *>();
+    matrices.gradients = matrices.boGradients.map<float *>();
+
+    static FrameSender sender("10.0.0.14");
     auto start = std::chrono::steady_clock::now();
     rs2::pipeline pipe;
     rs2::config cfg;
@@ -43,7 +63,9 @@ int main(int argc, char **argv)
         if (!pipe.try_wait_for_frames(&fs, 1000)) break;
     }
     double warmup_elapsed_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    #ifdef STARTUP_DEBUG
     std::cout << "Warmup elapsed time in ms: " << warmup_elapsed_time << std::endl;
+    #endif
 
     Motion motion;
     while (!halt)
@@ -54,14 +76,18 @@ int main(int argc, char **argv)
         {
             continue;
         }
+        #ifdef STARTUP_DEBUG
         std::cout << "Capture elapsed time in ms: " << capture_elapsed << std::endl;
+        #endif
         std::vector<Vertex> obstacleVertices;
         ObstacleClusteringTree obstacleTree(2);
         auto obstacles_start = std::chrono::steady_clock::now();
-        ParallelGradientCalculator::calculateGradientsParallel(matrices, GRADIENT_THREADS, obstacleVertices, obstacleTree);
-        double obstacles_elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - obstacles_start).count();
+        ParallelGradientCalculator::calculateGradientsParallel(matrices, gradient_krn, obstacleVertices, obstacleTree);
+        double obstacles_elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - obstacles_start).count();    
+        #ifdef STARTUP_DEBUG
         std::cout << "Obstacles elapsed time in ms: " << obstacles_elapsed << std::endl;
-        
+        #endif
+
         std::pair<int, int> startIndices = {DEPTH_HEIGHT - 1, DEPTH_WIDTH / 2};
         const int startIndex = Matrices::idx(startIndices.second, startIndices.first);
         Vertex start(matrices.coordX[startIndex], matrices.coordY[startIndex], 0);

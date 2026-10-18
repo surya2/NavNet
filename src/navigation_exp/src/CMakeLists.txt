@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 project(navigation)
 
-set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE Release)
 
 # For GCC/Clang
 if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
@@ -39,6 +39,12 @@ add_subdirectory(${REALSENSE_SOURCE_DIR} ${CMAKE_BINARY_DIR}/librealsense2)
 
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
+
+find_library(XRT_LIB xrt_coreutil REQUIRED)
+find_library(UUID_LIB uuid REQUIRED)
+find_path(XRT_INCLUDE_DIR xrt/xrt_device.h PATHS /usr/include/xrt REQUIRED)
+include_directories(${XRT_INCLUDE_DIR})
+link_libraries(${XRT_LIB} ${UUID_LIB})
 
 add_library(capture STATIC capture/realsense_capture.cpp capture/extract_capture.cpp)
 target_include_directories(capture PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${REALSENSE_INCLUDE_DIR})
