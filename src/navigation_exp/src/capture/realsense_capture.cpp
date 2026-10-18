@@ -206,7 +206,9 @@ void deproject_cpu(const uint16_t *depth, const DeprojParams &p, float *out_x, f
         }
     }
     double elapsed_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    #ifdef DEPTH_DEBUG
     std::cout << "deproject_cpu elapsed time in ms: " << elapsed_time << std::endl;
+    #endif
 }
 
 bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pipeline &pipe, 
@@ -226,7 +228,9 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
         rs2::frameset frames;
         if (!pipe.try_wait_for_frames(&frames, 1000))
         {
+            #ifdef DEPTH_DEBUG
             std::cerr << "No depth frame within 1000 ms\n";
+            #endif
             return false;
         }
         rs2::frameset newer;
@@ -243,7 +247,10 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
         rs2::motion_frame gyro = frames.first_or_default(RS2_STREAM_GYRO);
         if(depth){
             depth = decimation.process(depth);
+            #ifdef DEPTH_DEBUG
+            std::cout << "Depth frame timestamp: " << depth.get_timestamp() << " ms" << std::endl;
             std::cout << "Depth width: " << depth.get_width() << " and height: " << depth.get_height() << std::endl;
+            #endif
             // The kernel (and the macros) assume a fixed size and a tightly packed buffer.
             if (depth.get_width() != DEPTH_WIDTH || depth.get_height() != DEPTH_HEIGHT)
             {
@@ -267,8 +274,10 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
                 {
                     if (std::fabs(c) > 1e-9f)
                     {
+                        #ifdef DEPTH_DEBUG
                         std::cerr << "Warning: depth intrinsics have non-zero distortion coefficients; "
                                     "deproject_cpu ignores distortion.\n";
+                        #endif
                         break;
                     }
                 }
@@ -283,13 +292,17 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
 
             const uint16_t *raw_depth = reinterpret_cast<const uint16_t *>(depth.get_data());
 
-            #ifdef DEPTH_TIMING
+            #ifdef DEPTH_DEBUG
             const auto t0 = std::chrono::steady_clock::now();
             #endif
-            deproject_cpu(raw_depth, params, matrices.coordX, matrices.coordY, matrices.heights, matrices.valid, motion, vehicle);
-            #ifdef DEPTH_TIMING
+            deproject_cpu(raw_depth, params,
+                        matrices.coordX,
+                        matrices.coordY,
+                        matrices.heights,
+                        matrices.valid, motion);
+            #ifdef DEPTH_DEBUG
             const auto t1 = std::chrono::steady_clock::now();
-            std::cout << "deproject_cpu: "
+            std::cout << "deproject_cpu elapsed time: "
                     << std::chrono::duration<double, std::milli>(t1 - t0).count() << " ms\n";
             #endif
         }
@@ -298,6 +311,7 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
             motion.accel_x = accel_data.x;
             motion.accel_y = accel_data.y;
             motion.accel_z = accel_data.z;
+            #ifdef DEPTH_DEBUG
             std::cout << "Accel: x=" << accel_data.x << " y=" << accel_data.y << " z=" << accel_data.z << std::endl;
             std::cout << "Pitch about x-axis: " << motion.get_pitch_abt_x_axis() << " degrees" << std::endl;
             std::cout << "Roll about y-axis: " << motion.get_roll_abt_y_axis() << " degrees" << std::endl;
@@ -305,6 +319,7 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
             std::cout << "Gravity vector: (" << gravity_vec.x << ", "
                       << gravity_vec.y << ", "
                       << gravity_vec.z << ")" << std::endl;
+            #endif
             vehicle.orientation.update_position(control_time, motion);
             vehicle.update_vehicle_intrinsics();
         }
@@ -313,7 +328,9 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
             motion.gyro_x = gyro_data.x;
             motion.gyro_y = gyro_data.y;
             motion.gyro_z = gyro_data.z;
+            #ifdef DEPTH_DEBUG
             std::cout << "Gyro: x=" << gyro_data.x << " y=" << gyro_data.y << " z=" << gyro_data.z << std::endl;
+            #endif
             vehicle.orientation.update_orientation(control_time, motion);
             vehicle.update_vehicle_intrinsics();
         }
@@ -324,13 +341,17 @@ bool capture_depth_matrix(Matrices &matrices, int decimationKernelSize, rs2::pip
     }
     catch (const rs2::error &e)
     {
+        #ifdef DEPTH_DEBUG
         std::cerr << "RealSense error calling " << e.get_failed_function() << "(" << e.get_failed_args() << "):\n"
                   << e.what() << std::endl;
+        #endif
         return false;
     }
     catch (const std::exception &e)
     {
+        #ifdef DEPTH_DEBUG
         std::cerr << "Error: " << e.what() << std::endl;
+        #endif
         return false;
     }
 }

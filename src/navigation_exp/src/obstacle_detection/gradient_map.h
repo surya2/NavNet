@@ -12,7 +12,7 @@
 #define GRADIENT_MAX_THREADS 16
 #endif
 
-#define GRADIENT_TIMING
+// #define GRADIENT_TIMING
 
 struct Stats
 {
@@ -40,15 +40,12 @@ class ParallelGradientCalculator
 {
 public:
     static void calculateGradientsParallel(
-        const Matrices &m,
-        int numThreads,
+        Matrices &m,
+        xrt::kernel gradient_kernel,
         std::vector<Vertex> &obstacleVertices,
-        ObstacleClusteringTree &obstacleTree,
-        float *gradients);
+        ObstacleClusteringTree &obstacleTree);
 
 private:
-    // Raw-pointer compute functions: no std::vector, no heap, no shared_ptr.
-    // These are the pieces that can later be turned into FPGA kernels.
     static void computeGradientRows(
         const float *heights,
         const float *coordX,
@@ -72,6 +69,13 @@ private:
         const float *coordY,
         const uint8_t *valid,
         int row, int col);
+    
+    static void detectObstacles(
+        const Matrices &m,
+        const float *gradients,
+        const GradientPartialSums &total,
+        std::vector<Vertex> &obstacleVertices,
+        ObstacleClusteringTree &obstacleTree);
 };
 
 #endif

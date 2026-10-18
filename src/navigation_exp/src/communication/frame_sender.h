@@ -4,6 +4,8 @@
 #include <netinet/in.h>
 #include <string>
 
+// #define FRAME_SENDER_DEBUG
+
 enum PacketType : uint8_t
 {
     POINT_CLOUD = 0,

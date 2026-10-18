@@ -11,18 +11,32 @@ static float gradients[DEPTH_PIXELS];
 
 int main()
 {
+    xrt::device device(0);
+    auto uuid = device.load_xclbin("/lib/firmware/xilinx/<app>/gradient.xclbin");
+    xrt::kernel gradient_krn(device, uuid, "gradient_kernel");
+    matrices.boHeights = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(0));
+    matrices.boX = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(1));
+    matrices.boY = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(2));
+    matrices.boValid = xrt::bo(device, DEPTH_PIXELS * sizeof(uint8_t), xrt::bo::flags::cacheable, gradient_krn.group_id(3));
+    matrices.boGradients = xrt::bo(device, DEPTH_PIXELS * sizeof(float), xrt::bo::flags::cacheable, gradient_krn.group_id(4));
+    matrices.heights = matrices.boHeights.map<float *>();
+    matrices.coordX = matrices.boX.map<float *>();
+    matrices.coordY = matrices.boY.map<float *>();
+    matrices.valid = matrices.boValid.map<uint8_t *>();
+    matrices.gradients = matrices.boGradients.map<float *>();
+
     std::vector<Vertex> vertices;
     if (!runMatrixCollector(matrices, vertices, 4))
         return 1;
     std::vector<Vertex> obstacleVertices;
     ObstacleClusteringTree obstacleTree(2);
-    ParallelGradientCalculator::calculateGradientsParallel(matrices, 3, obstacleVertices, obstacleTree, gradients);
+    ParallelGradientCalculator::calculateGradientsParallel(matrices, gradient_krn, obstacleVertices, obstacleTree);
     std::vector<Vertex> gradientVertices;
     for (int i = 0; i < DEPTH_PIXELS; i++)
     {
         if (matrices.valid[i])
         {
-            gradientVertices.push_back(Vertex(matrices.coordX[i], matrices.coordY[i], gradients[i]));
+            gradientVertices.push_back(Vertex(matrices.coordX[i], matrices.coordY[i], matrices.gradients[i]));
         }
     }
 

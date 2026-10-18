@@ -17,6 +17,8 @@
 
 #define REALSENSE_ANGLE_FROM_HORIZONTAL 40.0f
 
+// #define DEPTH_DEBUG
+
 // Functions
 void save_to_ply(const std::vector<Vertex> &vertices, const std::string &filename);
 void save_matrices_to_txt(const Matrices &matrices, const std::string &filename);

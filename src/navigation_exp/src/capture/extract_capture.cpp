@@ -20,7 +20,9 @@ bool runMatrixCollector(Matrices &matrices, std::vector<Vertex> &vertices, int d
         if (!pipe.try_wait_for_frames(&fs, 1000)) break;
     }
     double warmup_elapsed_time = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    #ifdef DEPTH_TIMING
     std::cout << "Warmup elapsed time in ms: " << warmup_elapsed_time << std::endl;
+    #endif
 
     Motion motion;
     Vehicle vehicle;
@@ -33,7 +35,9 @@ bool runMatrixCollector(Matrices &matrices, std::vector<Vertex> &vertices, int d
             vertices.push_back(Vertex(matrices.coordX[i], matrices.coordY[i], matrices.heights[i]));
         }
     }
+    #ifdef DEPTH_TIMING
     std::cout << "Capture elapsed time in ms: " << captureElapsed << std::endl;
     std::cout << "Total elapsed time in ms: " << captureElapsed + warmup_elapsed_time << std::endl;
+    #endif
     return true;
 }

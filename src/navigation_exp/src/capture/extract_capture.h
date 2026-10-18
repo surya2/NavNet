@@ -7,6 +7,8 @@
 #include <memory>
 #include "capture/realsense_capture.h"
 
+// #define DEPTH_TIMING
+
 bool runMatrixCollector(Matrices &matrices, std::vector<Vertex> &vertices, int decimationKernelSize);
 
 #endif

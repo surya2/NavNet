@@ -29,6 +29,8 @@ FrameSender::FrameSender(const std::string &ip, uint16_t port) : sock(socket(AF_
 {
     int on = 1;
     setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on));
+    int sendBuffer = 4 * 1024 * 1024;
+    setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &sendBuffer, sizeof(sendBuffer));
     dest.sin_family = AF_INET;
     dest.sin_port = htons(port);
     if (inet_pton(AF_INET, ip.c_str(), &dest.sin_addr) != 1)
@@ -43,6 +45,17 @@ FrameSender::~FrameSender()
 void FrameSender::send(const Matrices &m, const std::vector<Vertex> &obstacles, const std::vector<Vertex> &path,
                        double elapsed, double captureElapsed, double obstaclesElapsed, double pathElapsed)
 {
+    const float stats[4] = {static_cast<float>(elapsed), static_cast<float>(captureElapsed),
+                            static_cast<float>(obstaclesElapsed), static_cast<float>(pathElapsed)};
+    PacketHeader header{};
+    header.type = STATS;
+    header.frameId = frameId;
+    header.chunkCount = 1;
+    header.payloadSize = sizeof(stats);
+    uint8_t packet[sizeof(PacketHeader) + sizeof(stats)];
+    std::memcpy(packet + sizeof(PacketHeader), stats, sizeof(stats));
+    transmit(header, packet);
+
     pointCount = 0;
     for (int i = 0; i < DEPTH_PIXELS; i++)
         if (m.valid[i])
@@ -67,17 +80,6 @@ void FrameSender::send(const Matrices &m, const std::vector<Vertex> &obstacles, 
         }
         sendList(type);
     }
-
-    const float stats[4] = {static_cast<float>(elapsed), static_cast<float>(captureElapsed),
-                            static_cast<float>(obstaclesElapsed), static_cast<float>(pathElapsed)};
-    PacketHeader header{};
-    header.type = STATS;
-    header.frameId = frameId;
-    header.chunkCount = 1;
-    header.payloadSize = sizeof(stats);
-    uint8_t packet[sizeof(PacketHeader) + sizeof(stats)];
-    std::memcpy(packet + sizeof(PacketHeader), stats, sizeof(stats));
-    transmit(header, packet);
     frameId++;
 }
 
@@ -135,5 +137,7 @@ void FrameSender::sendList(PacketType type)
         header.payloadSize = size;
         transmit(header, packet);
     }
+    #ifdef FRAME_SENDER_DEBUG
     std::cout << "Total bytes of payload sent: " << totalSize << std::endl;
+    #endif
 }

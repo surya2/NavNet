@@ -68,12 +68,10 @@ std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current, const Matr
         path.push_back(Vertex(current->x, current->y, m.heights[Matrices::idx(current->indices.second, current->indices.first)]));
         if (prev != nullptr)
         {
-            // Calculate heading to current point
             float dx = current->x - prev->x;
             float dy = current->y - prev->y;
             float target_heading = atan2(dy, dx);
 
-            // Calculate angular difference (need to handle wrap-around)
             float angular_diff = target_heading - prev_heading;
             float angular_delta = static_cast<float>(2 * M_PI);
             if (angular_diff > M_PI)
@@ -159,11 +157,13 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
     constexpr int rows = DEPTH_HEIGHT;
     constexpr int cols = DEPTH_WIDTH;
 
-    std::cout << "\n=== Debug Information ===\n";
+    #ifdef PATH_PLANNER_DEBUG
+    std::cout << "\n=== Path Planning Debug Information ===\n";
     std::cout << "Matrix dimensions: " << rows << "x" << cols << std::endl;
     std::cout << "Start indices: (" << startIndices.first << "," << startIndices.second << ")" << std::endl;
     std::cout << "Start coordinates: (" << start.x << "," << start.y << ")" << std::endl;
     std::cout << "Goal coordinates: (" << goal.x << "," << goal.y << ")" << std::endl;
+    #endif
 
     constexpr float INVALID_POINT_PENALTY = 5.0f;       // Penalty for invalid points
     constexpr float OBSTACLE_PROXIMITY_PENALTY = 10.0f; // Penalty for being near obstacles
@@ -185,13 +185,17 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
     if (startIndices.first >= rows ||
         startIndices.second >= cols)
     {
+        #ifdef PATH_PLANNER_DEBUG
         std::cout << "Error: Start indices out of bounds!" << std::endl;
+        #endif
         return std::vector<Vertex>();
     }
 
     const bool startValid = m.valid[startIndex];
+    #ifdef PATH_PLANNER_DEBUG
     std::cout << "Start coordinate valid: " << (startValid ? "true" : "false") << std::endl;
     std::cout << "Start coordinate actual position: (" << m.coordX[startIndex] << "," << m.coordY[startIndex] << ")" << std::endl;
+    #endif
 
     float startCost = startValid ? 0.0f : INVALID_POINT_PENALTY;
     PathPoint *startNode = new PathPoint(nullptr,
@@ -222,7 +226,9 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
         PathPoint *current = costArray[currentIndex];
         if (!current)
         {
+            #ifdef PATH_PLANNER_DEBUG
             std::cout << "Error: Null current point at index " << currentIndex << std::endl;
+            #endif
             continue;
         }
 
@@ -234,15 +240,19 @@ std::vector<Vertex> AStarPathPlanner::planPath(const Matrices &m,
 
         if (isDestination(current))
         {
+            #ifdef PATH_PLANNER_DEBUG
             std::cout << "Path found after " << iterations << " iterations!" << std::endl;
+            #endif
             std::vector<Vertex> path = retracePath(current, m);
             for (auto &point : costArray)
             {
                 delete point;
                 point = nullptr;
             }
+            #ifdef PATH_PLANNER_DEBUG
             std::cout << "Final OpenSet size: " << openSet.size() << std::endl;
             std::cout << "path size: " << path.size() << std::endl;
+            #endif
             return path;
         }
 

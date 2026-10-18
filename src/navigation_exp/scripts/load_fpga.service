@@ -1,0 +1,17 @@
+[Unit]
+Description=Load the gradient_accel FPGA accelerator
+# SHould be dfx-mgr.service but check with `systemctl list-units | grep -i -E "dfx|xlnx"`
+After=dfx-mgr.service
+Wants=dfx-mgr.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/sbin/modprobe zocl
+ExecStart=/home/ubuntu/NavNet/src/navigation_exp/scripts/load_fpga.sh
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target
