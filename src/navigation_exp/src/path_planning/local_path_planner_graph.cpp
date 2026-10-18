@@ -95,6 +95,14 @@ std::vector<Vertex> AStarPathPlanner::retracePath(PathPoint *current, const Matr
         prev = current;
         current = current->parent;
     }
+    if (!path.empty())
+    {
+        const float ground = path.back().z;
+        for (Vertex &v : path)
+        {
+            v.z = ground;
+        }
+    }
     return path;
 }
 
